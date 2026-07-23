@@ -1,0 +1,79 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Validate version
+        id: version
+        shell: pwsh
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          if ($tag -notmatch '^v(?<version>\d+\.\d+\.\d+)$') {
+              throw "Release tag must use vX.Y.Z format: $tag"
+          }
+
+          $version = $Matches.version
+          [xml]$manifest = Get-Content -LiteralPath 'src/BatteryChargeMeter.manifest'
+          $manifestVersion = $manifest.assembly.assemblyIdentity.version
+          $expectedManifestVersion = "$version.0"
+
+          if ($manifestVersion -ne $expectedManifestVersion) {
+              throw "Tag $tag requires manifest version $expectedManifestVersion; found $manifestVersion."
+          }
+
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+
+      - name: Build
+        shell: pwsh
+        run: ./scripts/build.ps1
+
+      - name: Package
+        id: package
+        shell: pwsh
+        run: |
+          $tag = '${{ steps.version.outputs.tag }}'
+          $archiveName = "BatteryChargeMeter-$tag-windows.zip"
+          $archivePath = Join-Path $env:RUNNER_TEMP $archiveName
+          $checksumName = "$archiveName.sha256"
+          $checksumPath = Join-Path $env:RUNNER_TEMP $checksumName
+
+          Compress-Archive -LiteralPath @(
+              'dist/BatteryChargeMeter.exe',
+              'dist/BatteryChargeMeter.exe.config'
+          ) -DestinationPath $archivePath
+
+          $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $archivePath).Hash.ToLowerInvariant()
+          "$hash  $archiveName" | Set-Content -LiteralPath $checksumPath -Encoding ascii
+
+          "archive=$archivePath" >> $env:GITHUB_OUTPUT
+          "checksum=$checksumPath" >> $env:GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create '${{ steps.version.outputs.tag }}' `
+            '${{ steps.package.outputs.archive }}#Portable Windows ZIP' `
+            '${{ steps.package.outputs.checksum }}#SHA-256 checksum' `
+            --repo $env:GITHUB_REPOSITORY `
+            --verify-tag `
+            --generate-notes `
+            --title '${{ steps.version.outputs.tag }}'

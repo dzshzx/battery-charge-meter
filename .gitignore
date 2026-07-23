@@ -1,6 +1,7 @@
 .vs/
 bin/
 obj/
+dist/
 work/
 *.pdb
 *.suo

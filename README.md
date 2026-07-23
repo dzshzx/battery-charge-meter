@@ -18,16 +18,17 @@
 
 ## 运行
 
-下载或克隆仓库后，保持下面两个文件位于同一目录，然后双击 EXE：
+从 [Releases](https://github.com/dzshzx/battery-charge-meter/releases/latest)
+下载最新的 `BatteryChargeMeter-vX.Y.Z-windows.zip`，解压后保持下面两个文件
+位于同一目录，然后双击 EXE：
 
 ```text
-dist/
-├── BatteryChargeMeter.exe
-└── BatteryChargeMeter.exe.config
+BatteryChargeMeter.exe
+BatteryChargeMeter.exe.config
 ```
 
 程序未使用商业代码签名证书。Windows 首次运行若显示 SmartScreen 提示，
-请先核对仓库来源和文件哈希，再决定是否运行。
+请先核对仓库来源，并使用 Release 附带的 `.sha256` 文件校验 ZIP，再决定是否运行。
 
 ## 系统要求
 
@@ -46,12 +47,34 @@ dist/
 ```
 
 脚本使用 Windows 自带的 .NET Framework C# 编译器，将结果写入 `dist/`。
+`dist/` 是本地构建目录，不纳入版本控制。
+
+## 发布
+
+项目使用 GitHub Actions 构建和发布：
+
+- 推送到 `master` 或向 `master` 提交 Pull Request 时，CI 会在 Windows
+  runner 上执行一次完整构建。
+- 推送符合 `vX.Y.Z` 格式的 tag 时，Release 工作流会校验 tag 与 manifest
+  版本一致，重新构建程序，生成便携 ZIP 和 SHA-256 校验文件，并创建
+  GitHub Release。
+
+发布新版本前先更新 `src/BatteryChargeMeter.manifest` 中的四段版本号。例如，
+manifest 版本 `1.3.0.0` 对应 tag `v1.3.0`：
+
+```powershell
+git tag -a v1.3.0 -m "Release v1.3.0"
+git push origin v1.3.0
+```
+
+发布产物只存在于 GitHub Release，不直接提交到仓库。
 
 ## 项目结构
 
 ```text
 .
-├── dist/       # 可直接运行的发布文件
+├── .github/    # CI 与 Release 工作流
 ├── scripts/    # 构建脚本
-└── src/        # C# 源码、DPI manifest 与运行配置
+├── src/        # C# 源码、DPI manifest 与运行配置
+└── dist/       # 本地构建输出（不纳入版本控制）
 ```
