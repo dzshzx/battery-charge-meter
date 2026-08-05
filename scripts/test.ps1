@@ -97,7 +97,7 @@ try {
 
     $dpiMetadata = Get-Content -LiteralPath $dpiMetadataPath -Raw
     if ($dpiMetadata -notmatch 'HandledDpi=192(?=;|$)' -or
-        $dpiMetadata -notmatch 'Client=860x820(?=;|$)' -or
+        $dpiMetadata -notmatch 'Client=860x1000(?=;|$)' -or
         $dpiMetadata -notmatch 'FormFontPixels=24(?:\.0+)?(?=;|$)' -or
         $dpiMetadata -notmatch 'PowerFontPixels=112(?:\.0+)?(?=;|$)' -or
         $dpiMetadata -notmatch 'WindowPositionApplied=True(?=;|$)' -or
@@ -133,7 +133,7 @@ try {
 
     $dpiReturnMetadata = Get-Content -LiteralPath $dpiReturnMetadataPath -Raw
     if ($dpiReturnMetadata -notmatch 'HandledDpi=96(?=;|$)' -or
-        $dpiReturnMetadata -notmatch 'Client=430x410(?=;|$)' -or
+        $dpiReturnMetadata -notmatch 'Client=430x500(?=;|$)' -or
         $dpiReturnMetadata -notmatch 'FormFontPixels=12(?:\.0+)?(?=;|$)' -or
         $dpiReturnMetadata -notmatch 'PowerFontPixels=56(?:\.0+)?(?=;|$)' -or
         $dpiReturnMetadata -notmatch 'WindowPositionApplied=True(?=;|$)' -or

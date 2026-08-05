@@ -355,7 +355,7 @@ namespace BatteryChargeMeter
             trayEnabled = enableTray;
             Text = "Battery Charge Meter";
             AutoScaleMode = AutoScaleMode.None;
-            ClientSize = new Size(430, 410);
+            ClientSize = new Size(430, 500);
             FormBorderStyle = FormBorderStyle.FixedSingle;
             MaximizeBox = false;
             StartPosition = FormStartPosition.CenterScreen;
@@ -396,26 +396,28 @@ namespace BatteryChargeMeter
             chart.Size = new Size(390, 102);
             Controls.Add(chart);
 
+            BuildPowerSourceRows();
+
             Label note = NewLabel(
-                "At battery terminals; not whole-system input power.",
-                20, 316, 390, 20, 9f, FontStyle.Regular);
+                "Headline value is at the battery terminals.",
+                20, 406, 390, 20, 9f, FontStyle.Regular);
             note.ForeColor = Color.FromArgb(100, 116, 139);
 
             CheckBox topMostCheckBox = new CheckBox();
             topMostCheckBox.Text = "Always on top";
             topMostCheckBox.Checked = true;
             topMostCheckBox.AutoSize = true;
-            topMostCheckBox.Location = new Point(20, 357);
+            topMostCheckBox.Location = new Point(20, 447);
             topMostCheckBox.ForeColor = Color.FromArgb(203, 213, 225);
             topMostCheckBox.FlatStyle = FlatStyle.Flat;
             topMostCheckBox.CheckedChanged += delegate { TopMost = topMostCheckBox.Checked; };
             Controls.Add(topMostCheckBox);
 
-            updatedLabel = NewLabel("Waiting for sensor...", 215, 354, 194, 22, 8.5f, FontStyle.Regular);
+            updatedLabel = NewLabel("Waiting for sensor...", 215, 444, 194, 22, 8.5f, FontStyle.Regular);
             updatedLabel.ForeColor = Color.FromArgb(100, 116, 139);
             updatedLabel.TextAlign = ContentAlignment.MiddleRight;
 
-            errorLabel = NewLabel("", 20, 382, 390, 18, 8f, FontStyle.Regular);
+            errorLabel = NewLabel("", 20, 472, 390, 18, 8f, FontStyle.Regular);
             errorLabel.ForeColor = errorColor;
             errorLabel.TextAlign = ContentAlignment.MiddleCenter;
 
@@ -529,6 +531,7 @@ namespace BatteryChargeMeter
                     trayMenu.Dispose();
                 if (dpiLayout != null)
                     dpiLayout.Dispose();
+                DisposePowerSources();
             }
             base.Dispose(disposing);
         }
@@ -633,6 +636,7 @@ namespace BatteryChargeMeter
                     : "--%";
                 percentageLabel.ForeColor = accent;
                 batteryBar.SetValue(reading.Percentage, accent);
+                UpdatePowerSources(reading);
                 int scalePercent = (int)Math.Round(dpiLayout.CurrentDpi * 100.0 / 96.0);
                 updatedLabel.Text = "Updated " + DateTime.Now.ToString("HH:mm:ss")
                     + "  |  " + scalePercent.ToString(CultureInfo.InvariantCulture) + "%";
