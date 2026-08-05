@@ -1,11 +1,11 @@
 # Battery Charge Meter
 
 一个轻量、免安装的 Windows 电池功率监视器。它直接读取 Windows/ACPI
-电池传感器，每秒更新电池端的净充放电功率。
+电池传感器，每秒更新**电池端净功率**。
 
 ## 功能
 
-- 实时显示充电或放电功率、电压、估算电流和电量
+- 实时显示电池端净功率、电池端电压、估算电流和电量
 - 最近 60 秒功率曲线、平均值与峰值
 - 最小化后隐藏到系统托盘，继续在后台监测
 - 托盘文字图标显示整数瓦数，悬停显示精确到 `0.01 W` 的功率
@@ -13,22 +13,42 @@
 - 双击托盘图标恢复窗口，右键菜单可显示窗口或退出
 - 支持 Per-Monitor V2 高 DPI，能够适配 100%–300% 缩放及跨屏切换
 
-> 显示值是电池实际获得或输出的净功率，不是插座端或充电器输入功率。
-> 电脑运行本身也会消耗充电器提供的一部分功率。
+## 功率口径
+
+- **整机输入功率（System Input Power）**：电能跨过电脑充电口进入整机的瞬时功率，
+  包含系统负载、电池端充电功率和机内转换损耗。
+- **电池端净功率（Net Battery Terminal Power）**：电能跨过电池包端子的带符号功率；
+  正值表示充电，负值表示放电。这是本程序当前显示的指标。
+- **系统负载功率（System Load Power）**：CPU、GPU、屏幕、主板和外设等内部组件
+  消耗的总功率；称为“主板功耗”会遗漏大量负载。
+- **墙端输入功率（Wall Input Power）**：充电器从插座取得的功率，还包含充电器自身损耗。
+
+近似功率平衡为：
+
+```text
+整机输入功率 ≈ 系统负载功率 + 电池端充电功率 + 机内转换损耗
+```
+
+Windows 通用电池接口只报告电池端功率，不能据此反推出整机输入功率。只有机器额外
+提供整机范围的 PMI/EMI 功率计、厂商 EC 接口或外置功率计时，程序才能可靠提供
+“整机输入功率”选项；缺少这种数据源时应显示不可用，而不能用适配器额定功率或
+电池充电功率代替。
 
 ## 运行
 
 从 [Releases](https://github.com/dzshzx/battery-charge-meter/releases/latest)
-下载最新的 `BatteryChargeMeter-vX.Y.Z-windows.zip`，解压后保持下面两个文件
-位于同一目录，然后双击 EXE：
-
-```text
-BatteryChargeMeter.exe
-BatteryChargeMeter.exe.config
-```
+下载最新的 `BatteryChargeMeter-vX.Y.Z-windows.exe`，然后直接双击运行。
 
 程序未使用商业代码签名证书。Windows 首次运行若显示 SmartScreen 提示，
-请先核对仓库来源，并使用 Release 附带的 `.sha256` 文件校验 ZIP，再决定是否运行。
+请先核对仓库来源，并使用 Release 附带的 `.sha256` 文件校验 EXE，再决定是否运行。
+
+## 配置文件
+
+当前版本不需要 `BatteryChargeMeter.exe.config`。旧版本中的这个文件不是用户设置，
+只用于声明 CLR/.NET Framework 4.7 启动目标、兼容旧 CLR 2 激活策略，以及 WinForms
+的 Per-Monitor V2 DPI 行为。本项目没有 CLR 2 或混合模式依赖；目标框架信息现已写入
+程序集，DPI awareness 由 EXE 内嵌 manifest 声明，跨屏缩放由程序直接处理
+`WM_DPICHANGED`，因此 Release 可以只提供一个 EXE。
 
 ## 系统要求
 
@@ -46,7 +66,7 @@ BatteryChargeMeter.exe.config
 .\scripts\build.ps1
 ```
 
-脚本使用 Windows 自带的 .NET Framework C# 编译器，将结果写入 `dist/`。
+脚本使用 Windows 自带的 .NET Framework C# 编译器，将单文件 EXE 写入 `dist/`。
 `dist/` 是本地构建目录，不纳入版本控制。
 
 ## 发布
@@ -56,7 +76,7 @@ BatteryChargeMeter.exe.config
 - 推送到 `master` 或向 `master` 提交 Pull Request 时，CI 会在 Windows
   runner 上执行一次完整构建。
 - 推送符合 `vX.Y.Z` 格式的 tag 时，Release 工作流会校验 tag 与 manifest
-  版本一致，重新构建程序，生成便携 ZIP 和 SHA-256 校验文件，并创建
+  版本一致，重新构建程序，生成可直接运行的 EXE 和 SHA-256 校验文件，并创建
   GitHub Release。
 
 发布新版本前先更新 `src/BatteryChargeMeter.manifest` 中的四段版本号。例如，
@@ -74,7 +94,7 @@ git push origin v1.3.0
 ```text
 .
 ├── .github/    # CI 与 Release 工作流
-├── scripts/    # 构建脚本
-├── src/        # C# 源码、DPI manifest 与运行配置
+├── scripts/    # 构建、测试与发布打包脚本
+├── src/        # C# 源码与 DPI manifest
 └── dist/       # 本地构建输出（不纳入版本控制）
 ```

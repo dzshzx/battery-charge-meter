@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
@@ -8,6 +9,10 @@ using System.IO;
 using System.Management;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
+
+[assembly: System.Runtime.Versioning.TargetFramework(
+    ".NETFramework,Version=v4.7",
+    FrameworkDisplayName = ".NET Framework 4.7")]
 
 namespace BatteryChargeMeter
 {
@@ -274,6 +279,10 @@ namespace BatteryChargeMeter
 
     internal static class NativeMethods
     {
+        internal const int WmDpiChanged = 0x02E0;
+        internal const uint SwpNoZOrder = 0x0004;
+        internal const uint SwpNoActivate = 0x0010;
+
         [StructLayout(LayoutKind.Sequential)]
         internal struct Rect
         {
@@ -290,13 +299,31 @@ namespace BatteryChargeMeter
         internal static extern uint GetDpiForWindow(IntPtr windowHandle);
 
         [DllImport("user32.dll")]
+        internal static extern IntPtr SendMessage(
+            IntPtr windowHandle,
+            int message,
+            IntPtr wParam,
+            IntPtr lParam);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        internal static extern bool SetWindowPos(
+            IntPtr windowHandle,
+            IntPtr insertAfter,
+            int x,
+            int y,
+            int width,
+            int height,
+            uint flags);
+
+        [DllImport("user32.dll")]
         internal static extern bool PrintWindow(IntPtr windowHandle, IntPtr deviceContext, uint flags);
 
         [DllImport("user32.dll")]
         internal static extern bool DestroyIcon(IntPtr iconHandle);
     }
 
-    internal sealed class MainForm : Form
+    internal sealed partial class MainForm : Form
     {
         private readonly Label stateLabel;
         private readonly Label updatedLabel;
@@ -311,7 +338,7 @@ namespace BatteryChargeMeter
         private readonly NotifyIcon trayIcon;
         private readonly ContextMenuStrip trayMenu;
         private readonly bool trayEnabled;
-        private readonly Dictionary<Control, Rectangle> designBounds = new Dictionary<Control, Rectangle>();
+        private readonly DpiLayout dpiLayout;
         private readonly Color chargingColor = Color.FromArgb(52, 211, 153);
         private readonly Color dischargeColor = Color.FromArgb(251, 191, 36);
         private readonly Color idleColor = Color.FromArgb(96, 165, 250);
@@ -320,15 +347,15 @@ namespace BatteryChargeMeter
         private Icon generatedTrayIcon;
         private string lastTrayGlyph = "";
         private Color lastTrayColor = Color.Empty;
-        private int currentDpi;
-        private readonly Size designClientSize = new Size(430, 410);
+        private bool lastDpiWindowPositionApplied;
+        private Point lastSuggestedPosition;
 
         public MainForm(bool enableTray)
         {
             trayEnabled = enableTray;
             Text = "Battery Charge Meter";
             AutoScaleMode = AutoScaleMode.None;
-            ClientSize = designClientSize;
+            ClientSize = new Size(430, 410);
             FormBorderStyle = FormBorderStyle.FixedSingle;
             MaximizeBox = false;
             StartPosition = FormStartPosition.CenterScreen;
@@ -337,7 +364,7 @@ namespace BatteryChargeMeter
             Font = new Font("Segoe UI", 9f, FontStyle.Regular, GraphicsUnit.Point);
             TopMost = true;
 
-            Label title = NewLabel("BATTERY POWER", 20, 17, 200, 20, 10f, FontStyle.Bold);
+            Label title = NewLabel("NET BATTERY TERMINAL POWER", 20, 17, 220, 20, 10f, FontStyle.Bold);
             title.ForeColor = Color.FromArgb(148, 163, 184);
 
             stateLabel = NewLabel("READING...", 270, 17, 140, 20, 9f, FontStyle.Bold);
@@ -370,7 +397,7 @@ namespace BatteryChargeMeter
             Controls.Add(chart);
 
             Label note = NewLabel(
-                "Net battery rate - not wall or adapter input power.",
+                "At battery terminals; not whole-system input power.",
                 20, 316, 390, 20, 9f, FontStyle.Regular);
             note.ForeColor = Color.FromArgb(100, 116, 139);
 
@@ -418,18 +445,11 @@ namespace BatteryChargeMeter
             trayMenu.Items.Add(exitMenuItem);
 
             trayIcon = new NotifyIcon();
-            trayIcon.Text = "Battery power: reading sensor...";
+            trayIcon.Text = "Net battery terminal power: reading sensor...";
             trayIcon.Icon = SystemIcons.Application;
             trayIcon.ContextMenuStrip = trayMenu;
             trayIcon.Visible = false;
             trayIcon.DoubleClick += delegate { RestoreFromTray(); };
-
-            DpiChanged += delegate(object sender, DpiChangedEventArgs e)
-            {
-                ApplyDpiScale(e.DeviceDpiNew);
-                chart.Invalidate();
-                batteryBar.Invalidate();
-            };
 
             Shown += delegate
             {
@@ -439,13 +459,50 @@ namespace BatteryChargeMeter
                 timer.Start();
             };
 
-            CaptureDesignBounds(Controls);
+            dpiLayout = new DpiLayout(this, ClientSize);
         }
 
         protected override void OnHandleCreated(EventArgs e)
         {
             base.OnHandleCreated(e);
-            ApplyDpiScale(ReadWindowDpi());
+            dpiLayout.Apply(ReadWindowDpi());
+        }
+
+        protected override void WndProc(ref Message message)
+        {
+            // WinForms gates its DpiChanged event behind app.config; handle the native
+            // message so the standalone EXE retains per-monitor scaling.
+            if (message.Msg == NativeMethods.WmDpiChanged && message.LParam != IntPtr.Zero)
+            {
+                int newDpi = (int)(message.WParam.ToInt64() & 0xffff);
+                NativeMethods.Rect suggested = (NativeMethods.Rect)Marshal.PtrToStructure(
+                    message.LParam,
+                    typeof(NativeMethods.Rect));
+
+                lastSuggestedPosition = new Point(suggested.Left, suggested.Top);
+                lastDpiWindowPositionApplied = NativeMethods.SetWindowPos(
+                    Handle,
+                    IntPtr.Zero,
+                    suggested.Left,
+                    suggested.Top,
+                    suggested.Right - suggested.Left,
+                    suggested.Bottom - suggested.Top,
+                    NativeMethods.SwpNoZOrder | NativeMethods.SwpNoActivate);
+                if (!lastDpiWindowPositionApplied)
+                {
+                    throw new Win32Exception(
+                        Marshal.GetLastWin32Error(),
+                        "Unable to apply the suggested DPI window bounds.");
+                }
+
+                dpiLayout.Apply(newDpi);
+                chart.Invalidate();
+                batteryBar.Invalidate();
+                message.Result = IntPtr.Zero;
+                return;
+            }
+
+            base.WndProc(ref message);
         }
 
         protected override void OnResize(EventArgs e)
@@ -470,107 +527,10 @@ namespace BatteryChargeMeter
                     generatedTrayIcon.Dispose();
                 if (trayMenu != null)
                     trayMenu.Dispose();
+                if (dpiLayout != null)
+                    dpiLayout.Dispose();
             }
             base.Dispose(disposing);
-        }
-
-        public void RenderPreview(string path)
-        {
-            StartPosition = FormStartPosition.Manual;
-            Location = new Point(Screen.PrimaryScreen.WorkingArea.Left + 20, Screen.PrimaryScreen.WorkingArea.Top + 20);
-            Show();
-            Application.DoEvents();
-            RefreshReading();
-            Application.DoEvents();
-
-            NativeMethods.Rect rectangle;
-            NativeMethods.GetWindowRect(Handle, out rectangle);
-            int captureWidth = Math.Max(1, rectangle.Right - rectangle.Left);
-            int captureHeight = Math.Max(1, rectangle.Bottom - rectangle.Top);
-            using (Bitmap bitmap = new Bitmap(captureWidth, captureHeight))
-            {
-                bool printed;
-                using (Graphics graphics = Graphics.FromImage(bitmap))
-                {
-                    IntPtr deviceContext = graphics.GetHdc();
-                    try
-                    {
-                        printed = NativeMethods.PrintWindow(Handle, deviceContext, 2);
-                    }
-                    finally
-                    {
-                        graphics.ReleaseHdc(deviceContext);
-                    }
-                }
-
-                if (!printed)
-                    DrawToBitmap(bitmap, new Rectangle(Point.Empty, bitmap.Size));
-                bitmap.Save(path, ImageFormat.Png);
-            }
-            File.WriteAllText(
-                path + ".txt",
-                String.Format(
-                    CultureInfo.InvariantCulture,
-                    "DeviceDpi={0}; Form={1}x{2}; Client={3}x{4}; WindowRect={5}x{6}",
-                    ReadWindowDpi(),
-                    Width,
-                    Height,
-                    ClientSize.Width,
-                    ClientSize.Height,
-                    captureWidth,
-                    captureHeight));
-            Hide();
-        }
-
-        public void RenderTrayIconPreview(string path, string glyph, bool discharging)
-        {
-            Color color = discharging ? trayDischargeColor : Color.White;
-            using (Icon icon = CreateTextIcon(glyph, color))
-            using (Bitmap bitmap = icon.ToBitmap())
-                bitmap.Save(path, ImageFormat.Png);
-        }
-
-        private void CaptureDesignBounds(Control.ControlCollection controls)
-        {
-            foreach (Control control in controls)
-            {
-                designBounds[control] = control.Bounds;
-                if (control.HasChildren)
-                    CaptureDesignBounds(control.Controls);
-            }
-        }
-
-        private void ApplyDpiScale(int dpi)
-        {
-            if (dpi <= 0)
-                dpi = 96;
-            if (currentDpi == dpi)
-                return;
-
-            float scale = dpi / 96f;
-            SuspendLayout();
-            ClientSize = new Size(ScaleValue(designClientSize.Width, scale), ScaleValue(designClientSize.Height, scale));
-
-            foreach (KeyValuePair<Control, Rectangle> item in designBounds)
-            {
-                Rectangle baseline = item.Value;
-                Control control = item.Key;
-                Point location = new Point(ScaleValue(baseline.X, scale), ScaleValue(baseline.Y, scale));
-
-                if (control.AutoSize)
-                {
-                    control.Location = location;
-                }
-                else
-                {
-                    control.Bounds = new Rectangle(
-                        location,
-                        new Size(ScaleValue(baseline.Width, scale), ScaleValue(baseline.Height, scale)));
-                }
-            }
-
-            currentDpi = dpi;
-            ResumeLayout(true);
         }
 
         private int ReadWindowDpi()
@@ -586,11 +546,6 @@ namespace BatteryChargeMeter
             }
 
             return 96;
-        }
-
-        private static int ScaleValue(int value, float scale)
-        {
-            return (int)Math.Round(value * scale, MidpointRounding.AwayFromZero);
         }
 
         private Label NewLabel(string text, int x, int y, int width, int height, float size, FontStyle style)
@@ -678,7 +633,7 @@ namespace BatteryChargeMeter
                     : "--%";
                 percentageLabel.ForeColor = accent;
                 batteryBar.SetValue(reading.Percentage, accent);
-                int scalePercent = (int)Math.Round(currentDpi * 100.0 / 96.0);
+                int scalePercent = (int)Math.Round(dpiLayout.CurrentDpi * 100.0 / 96.0);
                 updatedLabel.Text = "Updated " + DateTime.Now.ToString("HH:mm:ss")
                     + "  |  " + scalePercent.ToString(CultureInfo.InvariantCulture) + "%";
                 UpdateTrayDisplay(reading);
@@ -728,7 +683,7 @@ namespace BatteryChargeMeter
             if (!trayEnabled)
                 return;
             SetTrayIcon("--", Color.FromArgb(180, 180, 180));
-            SetTrayTooltip("Battery power sensor unavailable");
+            SetTrayTooltip("Battery terminal power sensor unavailable");
         }
 
         private string TrayPowerText(double powerWatts)
@@ -743,7 +698,7 @@ namespace BatteryChargeMeter
         private void SetTrayTooltip(string value)
         {
             if (String.IsNullOrEmpty(value))
-                value = "Battery power";
+                value = "Net battery terminal power";
             trayIcon.Text = value.Length <= 63 ? value : value.Substring(0, 63);
         }
 
@@ -846,6 +801,30 @@ namespace BatteryChargeMeter
             {
                 using (MainForm preview = new MainForm(false))
                     preview.RenderPreview(args[1]);
+                return;
+            }
+
+            if ((args.Length == 3 || args.Length == 4)
+                && String.Equals(args[0], "--dpi-preview", StringComparison.OrdinalIgnoreCase))
+            {
+                int targetDpi;
+                if (!Int32.TryParse(args[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out targetDpi))
+                    throw new ArgumentException("DPI must be an integer.", "args");
+
+                using (MainForm preview = new MainForm(false))
+                {
+                    if (args.Length == 3)
+                    {
+                        preview.RenderDpiTransitionPreview(args[1], targetDpi);
+                    }
+                    else
+                    {
+                        int returnDpi;
+                        if (!Int32.TryParse(args[3], NumberStyles.Integer, CultureInfo.InvariantCulture, out returnDpi))
+                            throw new ArgumentException("Return DPI must be an integer.", "args");
+                        preview.RenderDpiTransitionPreview(args[1], targetDpi, returnDpi);
+                    }
+                }
                 return;
             }
 
