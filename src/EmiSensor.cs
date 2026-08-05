@@ -256,9 +256,13 @@ namespace BatteryChargeMeter
                     data.Size = (uint)Marshal.SizeOf(typeof(DeviceInterfaceData));
                     if (!SetupDiEnumDeviceInterfaces(set, IntPtr.Zero, ref guid, index, ref data))
                     {
-                        if (Marshal.GetLastWin32Error() == ErrorNoMoreItems)
+                        int error = Marshal.GetLastWin32Error();
+                        if (error == ErrorNoMoreItems)
                             break;
-                        break;
+
+                        throw new InvalidOperationException(
+                            "SetupDiEnumDeviceInterfaces 失败: " +
+                            error.ToString(CultureInfo.InvariantCulture));
                     }
 
                     uint required = 0;
