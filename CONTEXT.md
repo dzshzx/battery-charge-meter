@@ -20,6 +20,14 @@ _Avoid_: Stored Chemical Power
 The power consumed by the computer's internal components while operating, excluding power flowing into the battery.
 _Avoid_: Motherboard Power
 
+**Platform Power (平台功率)**:
+The power reported by the processor's platform-level energy counter (Intel Psys, `MSR_PLATFORM_ENERGY_STATUS`). It covers the processor package plus the platform rails the board routes into that counter, and excludes battery charging power. Which rails are covered is an OEM board-design choice, so this is a close but not provably complete measurement of System Load Power. Report it under its own name rather than substituting it for either neighbouring term.
+_Avoid_: System Input Power, System Load Power, CPU Power
+
+**Estimated System Input Power (估算整机输入功率)**:
+System Input Power derived as Platform Power + Battery Charge Power. It omits the charging-path and conversion losses that no available counter measures, so it reads low. Always carry the estimated qualifier; never present it as System Input Power.
+_Avoid_: System Input Power, Measured Input Power
+
 **Wall Input Power (墙端输入功率)**:
 The power drawn by the external adapter from the AC supply. It additionally includes losses inside the adapter and is not the same as System Input Power.
 _Avoid_: System Input Power

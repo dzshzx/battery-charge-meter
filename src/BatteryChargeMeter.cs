@@ -828,6 +828,18 @@ namespace BatteryChargeMeter
                 return;
             }
 
+            if ((args.Length == 2 || args.Length == 3)
+                && String.Equals(args[0], "--power-probe", StringComparison.OrdinalIgnoreCase))
+            {
+                int seconds = 5;
+                if (args.Length == 3
+                    && !Int32.TryParse(args[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out seconds))
+                    throw new ArgumentException("Seconds must be an integer.", "args");
+
+                File.WriteAllText(args[1], PowerDiagnostics.Run(seconds));
+                return;
+            }
+
             if (args.Length == 4 && String.Equals(args[0], "--tray-preview", StringComparison.OrdinalIgnoreCase))
             {
                 bool discharging = String.Equals(args[3], "discharging", StringComparison.OrdinalIgnoreCase);
