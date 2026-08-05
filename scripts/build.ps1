@@ -13,6 +13,13 @@ $sourcePaths = @(
 )
 $manifestPath = Join-Path $sourceDir 'BatteryChargeMeter.manifest'
 $outputPath = Join-Path $distDir 'BatteryChargeMeter.exe'
+# Embedded so the build stays a single file. A same-named file beside the EXE
+# takes precedence at runtime; see third_party/NOTICE.md.
+$modulePath = Join-Path $repoRoot 'third_party/IntelMSR.bin'
+
+if (-not (Test-Path -LiteralPath $modulePath)) {
+    throw "Missing PawnIO module: $modulePath"
+}
 
 $compilerCandidates = @(
     (Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'),
@@ -36,6 +43,7 @@ $compilerArguments = @(
     '/target:winexe',
     '/optimize+',
     "/win32manifest:$manifestPath",
+    "/resource:$modulePath,IntelMSR.bin",
     "/out:$outputPath",
     '/reference:System.Windows.Forms.dll',
     '/reference:System.Drawing.dll',

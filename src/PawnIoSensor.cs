@@ -66,14 +66,12 @@ namespace BatteryChargeMeter
                     return;
                 }
 
-                string modulePath = FindModulePath();
-                if (modulePath == null)
+                byte[] module = LoadModule();
+                if (module == null)
                 {
-                    unavailableReason = "缺少 " + ModuleFileName + " 模块文件";
+                    unavailableReason = "缺少 " + ModuleFileName + " 模块";
                     return;
                 }
-
-                byte[] module = File.ReadAllBytes(modulePath);
 
                 int result = NativePawnIo.pawnio_open(out handle);
                 if (result < 0)
@@ -272,27 +270,38 @@ namespace BatteryChargeMeter
         }
 
         /// <summary>
-        /// The IntelMSR module ships beside this executable. The PawnIO
-        /// installer does not provide modules, so its directory is only a
-        /// fallback for users who placed one there themselves.
+        /// The IntelMSR module is embedded so the program stays a single file,
+        /// but a same-named file beside the executable wins. That ordering is
+        /// deliberate: it lets a user swap in their own build of this
+        /// LGPL-licensed module, which is what its licence requires, and it
+        /// also allows testing a newer upstream module without a rebuild.
         /// </summary>
-        private static string FindModulePath()
+        private static byte[] LoadModule()
         {
             string beside = Path.Combine(
                 Path.GetDirectoryName(typeof(PawnIoSensor).Assembly.Location) ?? ".",
                 ModuleFileName);
             if (File.Exists(beside))
-                return beside;
+                return File.ReadAllBytes(beside);
 
-            string installDirectory = FindInstallDirectory();
-            if (installDirectory != null)
+            using (Stream stream = typeof(PawnIoSensor).Assembly
+                .GetManifestResourceStream(ModuleFileName))
             {
-                string fallback = Path.Combine(installDirectory, ModuleFileName);
-                if (File.Exists(fallback))
-                    return fallback;
-            }
+                if (stream == null)
+                    return null;
 
-            return null;
+                byte[] buffer = new byte[stream.Length];
+                int offset = 0;
+                while (offset < buffer.Length)
+                {
+                    int read = stream.Read(buffer, offset, buffer.Length - offset);
+                    if (read <= 0)
+                        break;
+                    offset += read;
+                }
+
+                return offset == buffer.Length ? buffer : null;
+            }
         }
 
         public void Dispose()
