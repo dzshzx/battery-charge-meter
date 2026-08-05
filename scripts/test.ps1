@@ -192,4 +192,30 @@ finally {
     }
 }
 
+# Power derivation across supply states and firmware rate combinations. These
+# paths hand the user a wrong number without any sensor misbehaving, and no
+# single machine can be put into all of them on demand, so they are checked
+# mechanically rather than by whatever state this machine happens to be in.
+$selfTestDir = Join-Path ([IO.Path]::GetTempPath()) ([Guid]::NewGuid().ToString('n'))
+New-Item -ItemType Directory -Path $selfTestDir | Out-Null
+try {
+    $selfTestPath = Join-Path $selfTestDir 'self-test.txt'
+    $selfTestProcess = Start-Process -FilePath $artifacts[0].FullName `
+        -ArgumentList '--self-test', $selfTestPath -Wait -PassThru
+
+    if (-not (Test-Path -LiteralPath $selfTestPath)) {
+        throw 'Power self test did not produce a report.'
+    }
+
+    $selfTestReport = Get-Content -LiteralPath $selfTestPath -Raw
+    Write-Host $selfTestReport
+
+    if ($selfTestProcess.ExitCode -ne 0 -or $selfTestReport -notmatch 'Power self test passed\.') {
+        throw "Power self test failed with exit code $($selfTestProcess.ExitCode)."
+    }
+}
+finally {
+    Remove-Item -LiteralPath $selfTestDir -Recurse -Force -ErrorAction SilentlyContinue
+}
+
 Write-Host 'Standalone EXE and Release package tests passed.'

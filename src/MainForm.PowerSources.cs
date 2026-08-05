@@ -21,7 +21,8 @@ namespace BatteryChargeMeter
 
         private Label cpuPackageValue;
         private Label platformValue;
-        private Label estimatedInputValue;
+        private Label wholeSystemName;
+        private Label wholeSystemValue;
 
         /// <summary>
         /// Builds the source rows. Called from the constructor before
@@ -34,20 +35,26 @@ namespace BatteryChargeMeter
             sectionTitle.ForeColor = Color.FromArgb(100, 116, 139);
             Controls.Add(sectionTitle);
 
-            cpuPackageValue = AddSourceRow(0, PowerSample.LabelFor(PowerBoundary.CpuPackage));
-            platformValue = AddSourceRow(1, PowerSample.LabelFor(PowerBoundary.Platform));
-            estimatedInputValue = AddSourceRow(2, PowerSample.LabelFor(PowerBoundary.EstimatedSystemInput));
+            Label unusedName;
+            cpuPackageValue = AddSourceRow(
+                0, PowerSample.LabelFor(PowerBoundary.CpuPackage), out unusedName);
+            platformValue = AddSourceRow(
+                1, PowerSample.LabelFor(PowerBoundary.Platform), out unusedName);
 
-            sourceTip.SetToolTip(estimatedInputValue, "平台功率 + 电池端充电功率，不含充电路径损耗");
+            // The last row answers the whole-machine question, which is a
+            // different boundary on battery than on external power, so its
+            // caption is rewritten each tick from the sample itself.
+            wholeSystemValue = AddSourceRow(
+                2, PowerSample.LabelFor(PowerBoundary.EstimatedSystemInput), out wholeSystemName);
         }
 
-        private Label AddSourceRow(int index, string caption)
+        private Label AddSourceRow(int index, string caption, out Label nameLabel)
         {
             int y = FirstSourceRowY + (index * SourceRowSpacing);
 
-            Label name = NewLabel(caption, 20, y, 190, SourceRowHeight, 9.5f, FontStyle.Regular);
-            name.ForeColor = Color.FromArgb(148, 163, 184);
-            Controls.Add(name);
+            nameLabel = NewLabel(caption, 20, y, 190, SourceRowHeight, 9.5f, FontStyle.Regular);
+            nameLabel.ForeColor = Color.FromArgb(148, 163, 184);
+            Controls.Add(nameLabel);
 
             Label value = NewLabel("--", 210, y, 200, SourceRowHeight, 9.5f, FontStyle.Bold);
             value.TextAlign = ContentAlignment.MiddleRight;
@@ -68,13 +75,16 @@ namespace BatteryChargeMeter
             {
                 ShowSourceError(cpuPackageValue, error.Message);
                 ShowSourceError(platformValue, error.Message);
-                ShowSourceError(estimatedInputValue, error.Message);
+                ShowSourceError(wholeSystemValue, error.Message);
                 return;
             }
 
             Apply(cpuPackageValue, snapshot.CpuPackage);
             Apply(platformValue, snapshot.Platform);
-            Apply(estimatedInputValue, snapshot.EstimatedSystemInput);
+
+            if (snapshot.WholeSystem != null)
+                wholeSystemName.Text = PowerSample.LabelFor(snapshot.WholeSystem.Boundary);
+            Apply(wholeSystemValue, snapshot.WholeSystem);
         }
 
         /// <summary>

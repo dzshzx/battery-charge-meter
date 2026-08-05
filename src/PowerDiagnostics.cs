@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Text;
 using System.Threading;
@@ -13,8 +14,11 @@ namespace BatteryChargeMeter
     /// </summary>
     internal static class PowerDiagnostics
     {
-        public static string Run(int samples)
+        public static string Run(int seconds)
         {
+            if (seconds < 1)
+                throw new ArgumentOutOfRangeException("seconds", "Sample duration must be at least 1 second.");
+
             StringBuilder output = new StringBuilder();
 
             using (PowerSources sources = new PowerSources())
@@ -22,7 +26,15 @@ namespace BatteryChargeMeter
                 output.AppendLine("Power source discovery");
                 output.AppendLine("  CPU package (EMI): " + sources.CpuPackageStatus);
                 output.AppendLine("  Platform (PawnIO): " + sources.PlatformStatus);
+                output.AppendLine("  EMI channels: " + DescribeChannels(sources.EmiChannels));
                 output.AppendLine();
+
+                // The energy counters are cumulative, so one tick is spent
+                // establishing baselines before any figure exists. It is taken
+                // outside the reporting window so that the requested duration is
+                // the number of rows produced.
+                Baseline(sources);
+
                 output.AppendLine(String.Format(
                     CultureInfo.InvariantCulture,
                     "{0,-7} {1,-14} {2,-14} {3,-14} {4}",
@@ -30,9 +42,9 @@ namespace BatteryChargeMeter
                     "Battery_W",
                     "CpuPkg_W",
                     "Platform_W",
-                    "EstInput_W"));
+                    "WholeSystem_W"));
 
-                for (int i = 0; i <= samples; i++)
+                for (int second = 1; second <= seconds; second++)
                 {
                     Thread.Sleep(1000);
 
@@ -49,24 +61,57 @@ namespace BatteryChargeMeter
 
                     PowerSnapshot snapshot = sources.Read(battery);
 
-                    // The first tick only establishes the counter baselines.
-                    if (i == 0)
-                        continue;
-
                     output.AppendLine(String.Format(
                         CultureInfo.InvariantCulture,
                         "{0,-7} {1,-14} {2,-14} {3,-14} {4}",
-                        i.ToString(CultureInfo.InvariantCulture) + "s",
+                        second.ToString(CultureInfo.InvariantCulture) + "s",
                         battery.RateAvailable
                             ? battery.PowerWatts.ToString("0.00", CultureInfo.InvariantCulture)
                             : "n/a",
                         Describe(snapshot.CpuPackage),
                         Describe(snapshot.Platform),
-                        Describe(snapshot.EstimatedSystemInput)));
+                        DescribeWholeSystem(snapshot.WholeSystem)));
                 }
             }
 
             return output.ToString();
+        }
+
+        private static void Baseline(PowerSources sources)
+        {
+            Thread.Sleep(1000);
+            try
+            {
+                sources.Read(BatterySensor.Read());
+            }
+            catch (Exception)
+            {
+                // A failure here is reported by the first real row instead.
+            }
+        }
+
+        private static string DescribeChannels(IList<string> channels)
+        {
+            if (channels == null || channels.Count == 0)
+                return "(none)";
+
+            string[] copy = new string[channels.Count];
+            channels.CopyTo(copy, 0);
+            return String.Join(", ", copy);
+        }
+
+        /// <summary>
+        /// The whole-system boundary changes with the supply state, so the
+        /// report names the boundary alongside the value rather than letting a
+        /// fixed column heading imply the wrong one.
+        /// </summary>
+        private static string DescribeWholeSystem(PowerSample sample)
+        {
+            string value = Describe(sample);
+            if (sample == null || !sample.Available)
+                return value;
+
+            return value + " (" + PowerSample.LabelFor(sample.Boundary) + ")";
         }
 
         private static string Describe(PowerSample sample)

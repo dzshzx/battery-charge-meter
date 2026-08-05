@@ -59,16 +59,7 @@ namespace BatteryChargeMeter
                         uint dischargeRate = ReadUInt32(item, "DischargeRate");
                         uint voltage = ReadUInt32(item, "Voltage");
 
-                        bool chargeKnown = chargeRate != UInt32.MaxValue;
-                        bool dischargeKnown = dischargeRate != UInt32.MaxValue;
-                        reading.RateAvailable = chargeKnown || dischargeKnown;
-
-                        if (reading.Charging && chargeKnown)
-                            reading.PowerWatts = chargeRate / 1000.0;
-                        else if (reading.Discharging && dischargeKnown)
-                            reading.PowerWatts = -(dischargeRate / 1000.0);
-                        else
-                            reading.PowerWatts = 0.0;
+                        ResolveRate(reading, chargeRate, dischargeRate);
 
                         if (voltage != UInt32.MaxValue && voltage > 0)
                         {
@@ -93,6 +84,41 @@ namespace BatteryChargeMeter
 
             reading.Percentage = cachedPercentage;
             return reading;
+        }
+
+        /// <summary>
+        /// Resolves signed battery power and whether it is actually known, from
+        /// the raw WMI rates where <see cref="UInt32.MaxValue"/> means unknown.
+        ///
+        /// Availability has to track the direction currently in effect. Firmware
+        /// that reports one rate and not the other would otherwise pass as
+        /// available and yield a silent 0 W, which every consumer reads as a
+        /// real measurement. Neither direction being active is a genuine zero,
+        /// not an absence.
+        ///
+        /// Internal rather than inline so the self test can drive the firmware
+        /// combinations that no single machine can produce on demand.
+        /// </summary>
+        internal static void ResolveRate(BatteryReading reading, uint chargeRate, uint dischargeRate)
+        {
+            bool chargeKnown = chargeRate != UInt32.MaxValue;
+            bool dischargeKnown = dischargeRate != UInt32.MaxValue;
+
+            if (reading.Charging)
+            {
+                reading.RateAvailable = chargeKnown;
+                reading.PowerWatts = chargeKnown ? chargeRate / 1000.0 : 0.0;
+            }
+            else if (reading.Discharging)
+            {
+                reading.RateAvailable = dischargeKnown;
+                reading.PowerWatts = dischargeKnown ? -(dischargeRate / 1000.0) : 0.0;
+            }
+            else
+            {
+                reading.RateAvailable = true;
+                reading.PowerWatts = 0.0;
+            }
         }
 
         private static int ReadPercentage()
@@ -829,6 +855,15 @@ namespace BatteryChargeMeter
                         preview.RenderDpiTransitionPreview(args[1], targetDpi, returnDpi);
                     }
                 }
+                return;
+            }
+
+            if (args.Length == 2 && String.Equals(args[0], "--self-test", StringComparison.OrdinalIgnoreCase))
+            {
+                bool passed;
+                string report = PowerSelfTest.Run(out passed);
+                File.WriteAllText(args[1], report);
+                Environment.Exit(passed ? 0 : 1);
                 return;
             }
 

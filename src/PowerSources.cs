@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 
 namespace BatteryChargeMeter
@@ -8,7 +9,14 @@ namespace BatteryChargeMeter
     {
         public PowerSample CpuPackage;
         public PowerSample Platform;
-        public PowerSample EstimatedSystemInput;
+
+        /// <summary>
+        /// The whole-machine figure. Its boundary depends on the supply state:
+        /// measured system load when running on battery, estimated system input
+        /// when running on external power. Read
+        /// <see cref="PowerSample.Boundary"/> rather than assuming either.
+        /// </summary>
+        public PowerSample WholeSystem;
     }
 
     /// <summary>
@@ -42,6 +50,17 @@ namespace BatteryChargeMeter
             get { return pawnIo.Available ? "可用" : pawnIo.UnavailableReason; }
         }
 
+        /// <summary>
+        /// Every EMI channel found while discovering sources. A machine that
+        /// exposes only RAPL channels cannot report input power directly no
+        /// matter how the values are combined, and seeing the list is how a
+        /// bug report shows that.
+        /// </summary>
+        public IList<string> EmiChannels
+        {
+            get { return emi.DiscoveredChannels; }
+        }
+
         public PowerSnapshot Read(BatteryReading battery)
         {
             PowerSnapshot snapshot = new PowerSnapshot();
@@ -55,7 +74,7 @@ namespace BatteryChargeMeter
                 platform = Validate(platform, snapshot.CpuPackage, msrPackageWatts);
 
             snapshot.Platform = platform;
-            snapshot.EstimatedSystemInput = DeriveInput(platform, battery);
+            snapshot.WholeSystem = DeriveWholeSystem(platform, battery);
             return snapshot;
         }
 
@@ -95,15 +114,45 @@ namespace BatteryChargeMeter
         }
 
         /// <summary>
-        /// Estimated system input = platform power + battery charge power.
+        /// Answers the whole-machine power question, which is a different
+        /// question in each supply state and therefore a different boundary.
         ///
-        /// Psys excludes battery charging, so the two terms do not overlap. The
-        /// sum still omits the charging-path and conversion losses that no
-        /// counter on this machine measures, so the result reads low and is
-        /// always reported as an estimate.
+        /// Running on battery, every watt the machine uses leaves the battery
+        /// terminals, so total consumption is measured outright and no estimate
+        /// is involved. Input power in that state is zero by definition and
+        /// reporting the platform figure as input would be plainly wrong.
+        ///
+        /// Running on external power, input is estimated as platform power plus
+        /// the signed battery power. The sign matters: an adapter at its limit
+        /// lets the battery supplement the load, and clamping that term to zero
+        /// would overstate what the port actually supplies. The sum still omits
+        /// charging-path and conversion losses, so it reads low and stays an
+        /// estimate.
+        ///
+        /// Internal rather than private so the self test can drive it across
+        /// supply states without real hardware.
         /// </summary>
-        private static PowerSample DeriveInput(PowerSample platform, BatteryReading battery)
+        internal static PowerSample DeriveWholeSystem(PowerSample platform, BatteryReading battery)
         {
+            if (battery == null)
+                return PowerSample.Unsupported(PowerBoundary.SystemLoad, "电池状态不可用");
+
+            if (!battery.PowerOnline)
+            {
+                if (!battery.RateAvailable)
+                {
+                    return PowerSample.Unsupported(
+                        PowerBoundary.SystemLoad, "电池放电速率不可用");
+                }
+
+                return PowerSample.FromValue(
+                    PowerBoundary.SystemLoad,
+                    MeasurementKind.Measured,
+                    -battery.PowerWatts,
+                    "电池端放电功率",
+                    TimeSpan.Zero);
+            }
+
             if (platform == null || !platform.Available)
             {
                 return PowerSample.Unsupported(
@@ -111,19 +160,17 @@ namespace BatteryChargeMeter
                     platform == null ? "平台功率不可用" : platform.UnavailableReason);
             }
 
-            if (battery == null || !battery.RateAvailable)
+            if (!battery.RateAvailable)
             {
                 return PowerSample.Unsupported(
                     PowerBoundary.EstimatedSystemInput, "电池速率不可用");
             }
 
-            double chargeWatts = Math.Max(battery.PowerWatts, 0.0);
-
             return PowerSample.FromValue(
                 PowerBoundary.EstimatedSystemInput,
                 MeasurementKind.Estimated,
-                platform.Watts + chargeWatts,
-                "平台功率 + 电池端充电功率",
+                platform.Watts + battery.PowerWatts,
+                "平台功率 + 电池端净功率",
                 platform.Window);
         }
 

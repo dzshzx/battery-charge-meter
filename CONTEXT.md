@@ -17,8 +17,8 @@ The non-negative battery-terminal power while the battery is charging. Use Net B
 _Avoid_: Stored Chemical Power
 
 **System Load Power (系统负载功率)**:
-The power consumed by the computer's internal components while operating, excluding power flowing into the battery.
-_Avoid_: Motherboard Power
+The power consumed by the computer's internal components while operating, excluding power flowing into the battery. While the machine runs on battery this is measured directly, because every watt it uses then leaves the battery terminals; on external power it can only be estimated.
+_Avoid_: Motherboard Power, Whole-machine Power Draw
 
 **Platform Power (平台功率)**:
 The power reported by the processor's platform-level energy counter (Intel Psys, `MSR_PLATFORM_ENERGY_STATUS`). It covers the processor package plus the platform rails the board routes into that counter, and excludes battery charging power. Which rails are covered is an OEM board-design choice, so this is a close but not provably complete measurement of System Load Power. Report it under its own name rather than substituting it for either neighbouring term.

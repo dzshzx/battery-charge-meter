@@ -12,6 +12,7 @@ namespace BatteryChargeMeter
         BatteryTerminal,
         CpuPackage,
         Platform,
+        SystemLoad,
         EstimatedSystemInput,
     }
 
@@ -67,11 +68,6 @@ namespace BatteryChargeMeter
         }
 
         /// <summary>Chinese UI label for the boundary, per CONTEXT.md.</summary>
-        public string BoundaryLabel
-        {
-            get { return LabelFor(Boundary); }
-        }
-
         public static string LabelFor(PowerBoundary boundary)
         {
             switch (boundary)
@@ -82,6 +78,8 @@ namespace BatteryChargeMeter
                     return "CPU 包功率";
                 case PowerBoundary.Platform:
                     return "平台功率";
+                case PowerBoundary.SystemLoad:
+                    return "系统负载功率";
                 case PowerBoundary.EstimatedSystemInput:
                     return "估算整机输入功率";
                 default:

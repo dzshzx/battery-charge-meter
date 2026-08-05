@@ -21,6 +21,8 @@ namespace BatteryChargeMeter
         private const string PackageChannelSuffix = "_PKG";
 
         private readonly List<string> channelNames = new List<string>();
+        private readonly List<string> discoveredChannels = new List<string>();
+        private readonly string devicePath;
         private readonly int packageChannelIndex = -1;
         private readonly string unavailableReason;
 
@@ -32,50 +34,81 @@ namespace BatteryChargeMeter
         {
             try
             {
-                string path = NativeEmi.FindDevicePath();
-                if (path == null)
+                List<string> paths = NativeEmi.EnumeratePaths();
+                if (paths.Count == 0)
                 {
                     unavailableReason = "本机没有 EMI 电表设备";
                     return;
                 }
 
-                using (SafeFileHandle handle = NativeEmi.Open(path))
+                foreach (string path in paths)
                 {
-                    if (handle == null || handle.IsInvalid)
-                    {
-                        unavailableReason = "无法打开 EMI 设备";
-                        return;
-                    }
+                    List<string> names = ReadChannels(path);
+                    if (names == null)
+                        continue;
 
-                    ushort version = NativeEmi.ReadVersion(handle);
-                    if (version != 2)
-                    {
-                        // V1 metadata has a different layout that this build has
-                        // never been able to test against real hardware.
-                        unavailableReason = "EMI 版本 " +
-                            version.ToString(CultureInfo.InvariantCulture) + " 未支持";
-                        return;
-                    }
+                    discoveredChannels.AddRange(names);
 
-                    channelNames.AddRange(NativeEmi.ReadChannelNames(handle));
-                }
+                    int index = IndexOfPackageChannel(names);
+                    if (index < 0)
+                        continue;
 
-                for (int i = 0; i < channelNames.Count; i++)
-                {
-                    if (channelNames[i].EndsWith(PackageChannelSuffix, StringComparison.OrdinalIgnoreCase))
-                    {
-                        packageChannelIndex = i;
-                        break;
-                    }
+                    devicePath = path;
+                    channelNames.AddRange(names);
+                    packageChannelIndex = index;
+                    break;
                 }
 
                 if (packageChannelIndex < 0)
-                    unavailableReason = "EMI 没有 CPU 包功率通道";
+                {
+                    unavailableReason = discoveredChannels.Count == 0
+                        ? "EMI 设备未报告任何通道"
+                        : "EMI 没有 CPU 包功率通道";
+                }
             }
             catch (Exception error)
             {
                 unavailableReason = "EMI 初始化失败: " + error.Message;
             }
+        }
+
+        /// <summary>
+        /// Channel names of the device in use, or of every device inspected when
+        /// none carried a package channel. Surfaced so the capability report can
+        /// show what the machine does expose instead of only that the lookup
+        /// failed.
+        /// </summary>
+        public IList<string> DiscoveredChannels
+        {
+            get { return discoveredChannels.AsReadOnly(); }
+        }
+
+        private static List<string> ReadChannels(string path)
+        {
+            using (SafeFileHandle handle = NativeEmi.Open(path))
+            {
+                if (handle == null || handle.IsInvalid)
+                    return null;
+
+                // V1 metadata has a different layout that this build has never
+                // been able to test against real hardware, so such a device is
+                // skipped rather than parsed on a guess.
+                if (NativeEmi.ReadVersion(handle) != 2)
+                    return null;
+
+                return NativeEmi.ReadChannelNames(handle);
+            }
+        }
+
+        private static int IndexOfPackageChannel(List<string> names)
+        {
+            for (int i = 0; i < names.Count; i++)
+            {
+                if (names[i].EndsWith(PackageChannelSuffix, StringComparison.OrdinalIgnoreCase))
+                    return i;
+            }
+
+            return -1;
         }
 
         public bool Available
@@ -88,16 +121,6 @@ namespace BatteryChargeMeter
             get { return unavailableReason; }
         }
 
-        /// <summary>
-        /// Channel names as reported by the device, for diagnostics. A machine
-        /// whose EMI exposes only RAPL channels cannot report system input
-        /// power no matter how the values are combined.
-        /// </summary>
-        public IList<string> ChannelNames
-        {
-            get { return channelNames.AsReadOnly(); }
-        }
-
         public PowerSample Read()
         {
             if (!Available)
@@ -107,11 +130,7 @@ namespace BatteryChargeMeter
             ulong time;
             try
             {
-                string path = NativeEmi.FindDevicePath();
-                if (path == null)
-                    return PowerSample.Unsupported(PowerBoundary.CpuPackage, "EMI 设备已消失");
-
-                using (SafeFileHandle handle = NativeEmi.Open(path))
+                using (SafeFileHandle handle = NativeEmi.Open(devicePath))
                 {
                     if (handle == null || handle.IsInvalid)
                         return PowerSample.Unsupported(PowerBoundary.CpuPackage, "无法打开 EMI 设备");
@@ -212,45 +231,61 @@ namespace BatteryChargeMeter
             SafeFileHandle handle, uint code, IntPtr inBuffer, uint inSize,
             IntPtr outBuffer, uint outSize, ref uint returned, IntPtr overlapped);
 
-        public static string FindDevicePath()
+        /// <summary>
+        /// Windows creates one interface per energy meter, so a machine with an
+        /// OEM meter alongside the generic RAPL one exposes several. Stopping at
+        /// index zero would miss the package channel whenever it is not on the
+        /// first device, which is most likely exactly on the boards that carry
+        /// extra meters.
+        /// </summary>
+        public static List<string> EnumeratePaths()
         {
+            List<string> paths = new List<string>();
+
             Guid guid = EnergyMeterGuid;
             IntPtr set = SetupDiGetClassDevs(
                 ref guid, IntPtr.Zero, IntPtr.Zero, DigcfPresent | DigcfDeviceInterface);
             if (set == new IntPtr(-1))
-                return null;
+                return paths;
 
             try
             {
-                DeviceInterfaceData data = new DeviceInterfaceData();
-                data.Size = (uint)Marshal.SizeOf(typeof(DeviceInterfaceData));
-                if (!SetupDiEnumDeviceInterfaces(set, IntPtr.Zero, ref guid, 0, ref data))
-                    return null;
-
-                uint required = 0;
-                SetupDiGetDeviceInterfaceDetail(set, ref data, IntPtr.Zero, 0, ref required, IntPtr.Zero);
-                if (required == 0)
-                    return null;
-
-                IntPtr detail = Marshal.AllocHGlobal((int)required);
-                try
+                for (uint index = 0; ; index++)
                 {
-                    Marshal.WriteInt32(detail, IntPtr.Size == 8 ? 8 : 6);
-                    if (!SetupDiGetDeviceInterfaceDetail(
-                            set, ref data, detail, required, ref required, IntPtr.Zero))
-                        return null;
+                    DeviceInterfaceData data = new DeviceInterfaceData();
+                    data.Size = (uint)Marshal.SizeOf(typeof(DeviceInterfaceData));
+                    if (!SetupDiEnumDeviceInterfaces(set, IntPtr.Zero, ref guid, index, ref data))
+                    {
+                        if (Marshal.GetLastWin32Error() == ErrorNoMoreItems)
+                            break;
+                        break;
+                    }
 
-                    return Marshal.PtrToStringUni(IntPtr.Add(detail, 4));
-                }
-                finally
-                {
-                    Marshal.FreeHGlobal(detail);
+                    uint required = 0;
+                    SetupDiGetDeviceInterfaceDetail(set, ref data, IntPtr.Zero, 0, ref required, IntPtr.Zero);
+                    if (required == 0)
+                        continue;
+
+                    IntPtr detail = Marshal.AllocHGlobal((int)required);
+                    try
+                    {
+                        Marshal.WriteInt32(detail, IntPtr.Size == 8 ? 8 : 6);
+                        if (SetupDiGetDeviceInterfaceDetail(
+                                set, ref data, detail, required, ref required, IntPtr.Zero))
+                            paths.Add(Marshal.PtrToStringUni(IntPtr.Add(detail, 4)));
+                    }
+                    finally
+                    {
+                        Marshal.FreeHGlobal(detail);
+                    }
                 }
             }
             finally
             {
                 SetupDiDestroyDeviceInfoList(set);
             }
+
+            return paths;
         }
 
         public static SafeFileHandle Open(string path)
