@@ -159,9 +159,13 @@ git push origin v1.3.0
 
 ```text
 .
-├── .github/    # CI 与 Release 工作流
-├── installer/  # Inno Setup 安装包定义
-├── scripts/    # 构建、测试与发布打包脚本
-├── src/        # C# 源码与 DPI manifest
-└── dist/       # 本地构建输出（不纳入版本控制）
+├── .github/     # CI 与 Release 工作流
+├── docs/        # 功率数据源与边界研究记录
+├── installer/   # Inno Setup 安装包定义
+├── scripts/     # 构建、测试与发布打包脚本
+├── src/         # C# 源码与 DPI manifest
+├── third_party/ # 内嵌模块、许可证、通知与对应源码
+├── AGENTS.md    # 修改与验证时必须保持的项目约束
+├── CONTEXT.md   # 功率口径的统一术语
+└── dist/        # 本地构建输出（不纳入版本控制）
 ```
