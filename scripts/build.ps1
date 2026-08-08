@@ -6,10 +6,29 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
 $sourceDir = Join-Path $repoRoot 'src'
 $distDir = Join-Path $repoRoot 'dist'
-$sourcePath = Join-Path $sourceDir 'BatteryChargeMeter.cs'
+$sourcePaths = @(
+    Get-ChildItem -LiteralPath $sourceDir -Filter '*.cs' -File |
+        Sort-Object -Property Name |
+        Select-Object -ExpandProperty FullName
+)
 $manifestPath = Join-Path $sourceDir 'BatteryChargeMeter.manifest'
-$configPath = Join-Path $sourceDir 'BatteryChargeMeter.exe.config'
 $outputPath = Join-Path $distDir 'BatteryChargeMeter.exe'
+# Embedded so the portable application remains self-contained. A same-named
+# file beside the EXE takes precedence at runtime; see third_party/NOTICE.md.
+$modulePath = Join-Path $repoRoot 'third_party/IntelMSR.bin'
+$noticePath = Join-Path $repoRoot 'third_party/NOTICE.md'
+$licensePath = Join-Path $repoRoot 'third_party/LICENSE.LGPL-2.1.txt'
+$expectedModuleHash = 'd6ed85d65ab17a22f813ef98207d6d537155ee2ded5976a21cb48413c9b92e5f'
+
+foreach ($resourcePath in @($modulePath, $noticePath, $licensePath)) {
+    if (-not (Test-Path -LiteralPath $resourcePath)) {
+        throw "Missing embedded resource: $resourcePath"
+    }
+}
+
+if ((Get-FileHash -Algorithm SHA256 -LiteralPath $modulePath).Hash.ToLowerInvariant() -ne $expectedModuleHash) {
+    throw 'The vendored IntelMSR.bin does not match the pinned PawnIO.Modules 0.2.10 module.'
+}
 
 $compilerCandidates = @(
     (Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'),
@@ -23,6 +42,9 @@ if (-not $compilerPath) {
     throw 'The .NET Framework C# compiler was not found.'
 }
 
+if (Test-Path -LiteralPath $distDir) {
+    Remove-Item -LiteralPath $distDir -Recurse -Force
+}
 New-Item -ItemType Directory -Path $distDir -Force | Out-Null
 
 $compilerArguments = @(
@@ -30,19 +52,20 @@ $compilerArguments = @(
     '/target:winexe',
     '/optimize+',
     "/win32manifest:$manifestPath",
+    "/resource:$modulePath,IntelMSR.bin",
+    "/resource:$noticePath,THIRD_PARTY_NOTICE.md",
+    "/resource:$licensePath,LGPL-2.1.txt",
     "/out:$outputPath",
     '/reference:System.Windows.Forms.dll',
     '/reference:System.Drawing.dll',
     '/reference:System.Management.dll',
-    $sourcePath
+    $sourcePaths
 )
 
 & $compilerPath @compilerArguments
 if ($LASTEXITCODE -ne 0) {
     throw "Compilation failed with exit code $LASTEXITCODE."
 }
-
-Copy-Item -LiteralPath $configPath -Destination (Join-Path $distDir 'BatteryChargeMeter.exe.config') -Force
 
 $artifact = Get-Item -LiteralPath $outputPath
 $hash = Get-FileHash -Algorithm SHA256 -LiteralPath $outputPath

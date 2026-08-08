@@ -40,30 +40,27 @@ jobs:
 
           "tag=$tag" >> $env:GITHUB_OUTPUT
 
-      - name: Build
+      - name: Test application and Release packages
         shell: pwsh
-        run: ./scripts/build.ps1
+        run: ./scripts/test.ps1
 
       - name: Package
         id: package
         shell: pwsh
         run: |
           $tag = '${{ steps.version.outputs.tag }}'
-          $archiveName = "BatteryChargeMeter-$tag-windows.zip"
-          $archivePath = Join-Path $env:RUNNER_TEMP $archiveName
-          $checksumName = "$archiveName.sha256"
-          $checksumPath = Join-Path $env:RUNNER_TEMP $checksumName
+          $package = ./scripts/package-release.ps1 `
+            -Tag $tag `
+            -ExecutablePath 'dist/BatteryChargeMeter.exe' `
+            -OutputDirectory $env:RUNNER_TEMP `
+            -Formats 'Portable', 'Installer'
 
-          Compress-Archive -LiteralPath @(
-              'dist/BatteryChargeMeter.exe',
-              'dist/BatteryChargeMeter.exe.config'
-          ) -DestinationPath $archivePath
-
-          $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $archivePath).Hash.ToLowerInvariant()
-          "$hash  $archiveName" | Set-Content -LiteralPath $checksumPath -Encoding ascii
-
-          "archive=$archivePath" >> $env:GITHUB_OUTPUT
-          "checksum=$checksumPath" >> $env:GITHUB_OUTPUT
+          "binary=$($package.BinaryPath)" >> $env:GITHUB_OUTPUT
+          "checksum=$($package.ChecksumPath)" >> $env:GITHUB_OUTPUT
+          "installer=$($package.InstallerPath)" >> $env:GITHUB_OUTPUT
+          "installer_checksum=$($package.InstallerChecksumPath)" >> $env:GITHUB_OUTPUT
+          "notices=$($package.NoticesPath)" >> $env:GITHUB_OUTPUT
+          "source_bundle=$($package.SourceBundlePath)" >> $env:GITHUB_OUTPUT
 
       - name: Create GitHub Release
         shell: pwsh
@@ -71,8 +68,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create '${{ steps.version.outputs.tag }}' `
-            '${{ steps.package.outputs.archive }}#Portable Windows ZIP' `
+            '${{ steps.package.outputs.binary }}#Portable Windows executable' `
             '${{ steps.package.outputs.checksum }}#SHA-256 checksum' `
+            '${{ steps.package.outputs.installer }}#Windows installer' `
+            '${{ steps.package.outputs.installer_checksum }}#Installer SHA-256 checksum' `
+            '${{ steps.package.outputs.notices }}#Third-party notices and LGPL-2.1' `
+            '${{ steps.package.outputs.source_bundle }}#Corresponding PawnIO.Modules source' `
             --repo $env:GITHUB_REPOSITORY `
             --verify-tag `
             --generate-notes `
