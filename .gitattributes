@@ -1,0 +1,2 @@
+# Preserve exact upstream bytes for hash-verified third-party artifacts.
+third_party/LICENSE.LGPL-2.1.txt -text
