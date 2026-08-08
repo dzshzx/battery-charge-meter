@@ -206,7 +206,6 @@ namespace BatteryChargeMeter
 
         public void Dispose()
         {
-            emi.Dispose();
             pawnIo.Dispose();
         }
     }

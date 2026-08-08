@@ -23,6 +23,7 @@ namespace BatteryChargeMeter
             StringBuilder log = new StringBuilder();
             int failures = 0;
 
+            failures += SupplyStateCases(log);
             failures += RateCases(log);
             failures += BatteryAggregationCases(log);
             failures += WholeSystemCases(log);
@@ -40,13 +41,39 @@ namespace BatteryChargeMeter
             return log.ToString();
         }
 
+        private static int SupplyStateCases(StringBuilder log)
+        {
+            int failures = 0;
+            BatterySupplyState inconsistent = BatterySupplyStates.FromFlags(
+                false, true, true);
+            failures += Check(log, "contradictory battery flags form one invalid state",
+                inconsistent == BatterySupplyState.Inconsistent
+                    && BatterySupplyStates.FromFlags(false, true, false)
+                        == BatterySupplyState.Inconsistent
+                    && !BatterySupplyStates.Describe(inconsistent).StatusAvailable);
+
+            BatterySupplyState supplemented = BatterySupplyStates.FromFlags(
+                true, false, true);
+            BatterySupplyProfile profile = BatterySupplyStates.Describe(supplemented);
+            failures += Check(log, "one supply profile drives window and tray presentation",
+                supplemented == BatterySupplyState.ExternalPowerSupplemented
+                    && profile.StatusAvailable
+                    && profile.PowerOnline
+                    && !profile.Charging
+                    && profile.Discharging
+                    && profile.StateText == "DISCHARGING"
+                    && profile.TrayMode == "Discharging"
+                    && profile.Accent == BatteryAccentKind.Discharging);
+            return failures;
+        }
+
         private static int RateCases(StringBuilder log)
         {
             int failures = 0;
 
             // Charging with a known charge rate.
             BatteryReading reading = new BatteryReading();
-            reading.Charging = true;
+            reading.SupplyState = BatterySupplyState.ExternalPowerCharging;
             BatterySensor.ResolveRate(reading, 43802, 0);
             BatterySensor.ResolveElectricalDetails(reading, 12000);
             failures += Check(log, "charging, charge rate known",
@@ -61,21 +88,21 @@ namespace BatteryChargeMeter
             // rate for the direction in effect is unknown, so nothing may be
             // presented as a measurement.
             reading = new BatteryReading();
-            reading.Charging = true;
+            reading.SupplyState = BatterySupplyState.ExternalPowerCharging;
             BatterySensor.ResolveRate(reading, UInt32.MaxValue, 0);
             failures += Check(log, "charging, only discharge rate known",
                 !reading.RateAvailable);
 
             // Discharging with a known discharge rate yields negative power.
             reading = new BatteryReading();
-            reading.Discharging = true;
+            reading.SupplyState = BatterySupplyState.BatteryDischarging;
             BatterySensor.ResolveRate(reading, 0, 25000);
             failures += Check(log, "discharging, discharge rate known",
                 reading.RateAvailable && Near(reading.PowerWatts, -25.0));
 
             // Discharging while only the opposite direction reports a rate.
             reading = new BatteryReading();
-            reading.Discharging = true;
+            reading.SupplyState = BatterySupplyState.BatteryDischarging;
             BatterySensor.ResolveRate(reading, 0, UInt32.MaxValue);
             failures += Check(log, "discharging, only charge rate known",
                 !reading.RateAvailable);
@@ -83,7 +110,7 @@ namespace BatteryChargeMeter
             // Neither direction active while external power is present is a
             // real zero, not an absence.
             reading = new BatteryReading();
-            reading.PowerOnline = true;
+            reading.SupplyState = BatterySupplyState.ExternalPowerIdle;
             BatterySensor.ResolveRate(reading, UInt32.MaxValue, UInt32.MaxValue);
             failures += Check(log, "online idle battery reports a known zero",
                 reading.RateAvailable && Near(reading.PowerWatts, 0.0));
@@ -127,7 +154,7 @@ namespace BatteryChargeMeter
                 new BatteryReading[0]);
             BatterySensor.AssignSystemPercentage(unavailable, 64);
             failures += Check(log, "missing active battery is not labelled on battery",
-                MainForm.StateText(unavailable) == "BATTERY UNAVAILABLE"
+                unavailable.SupplyProfile.StateText == "BATTERY UNAVAILABLE"
                     && unavailable.Percentage == -1);
 
             return failures;
@@ -233,10 +260,7 @@ namespace BatteryChargeMeter
             int failures = Check(log, "EMI V1 version and package metadata are accepted",
                 channels.Count == 1 && channels[0] == "CPU_PKG");
 
-            List<string> selectedChannels;
-            List<string> discoveredChannels;
-            List<string> errors;
-            string selectedPath = EmiSensor.SelectPackageDevice(
+            EmiDiscoveryResult discovery = EmiSensor.SelectPackageDevice(
                 new string[] { "bad-device", "good-device" },
                 delegate(string path)
                 {
@@ -249,15 +273,13 @@ namespace BatteryChargeMeter
                         {
                             return NativeEmi.ParseChannelNames(version, bytes);
                         });
-                },
-                out selectedChannels,
-                out discoveredChannels,
-                out errors);
+                });
 
             failures += Check(log, "bad EMI device does not hide a later package meter",
-                selectedPath == "good-device"
-                    && selectedChannels.Count == 1
-                    && errors.Count == 1);
+                discovery.DevicePath == "good-device"
+                    && discovery.SelectedChannels.Count == 1
+                    && discovery.DiscoveredChannels.Count == 1
+                    && discovery.Errors.Count == 1);
             return failures;
         }
 
@@ -314,11 +336,21 @@ namespace BatteryChargeMeter
             bool online, bool charging, bool rateAvailable, double watts)
         {
             BatteryReading reading = new BatteryReading();
-            reading.StatusAvailable = true;
             reading.ActiveBatteryCount = 1;
-            reading.PowerOnline = online;
-            reading.Charging = charging;
-            reading.Discharging = watts < 0.0;
+            if (charging)
+                reading.SupplyState = BatterySupplyState.ExternalPowerCharging;
+            else if (watts < 0.0)
+            {
+                reading.SupplyState = online
+                    ? BatterySupplyState.ExternalPowerSupplemented
+                    : BatterySupplyState.BatteryDischarging;
+            }
+            else
+            {
+                reading.SupplyState = online
+                    ? BatterySupplyState.ExternalPowerIdle
+                    : BatterySupplyState.BatteryDirectionUnknown;
+            }
             reading.RateAvailable = rateAvailable;
             reading.PowerWatts = watts;
             return reading;

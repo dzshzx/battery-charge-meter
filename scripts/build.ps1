@@ -13,8 +13,8 @@ $sourcePaths = @(
 )
 $manifestPath = Join-Path $sourceDir 'BatteryChargeMeter.manifest'
 $outputPath = Join-Path $distDir 'BatteryChargeMeter.exe'
-# Embedded so the build stays a single file. A same-named file beside the EXE
-# takes precedence at runtime; see third_party/NOTICE.md.
+# Embedded so the portable application remains self-contained. A same-named
+# file beside the EXE takes precedence at runtime; see third_party/NOTICE.md.
 $modulePath = Join-Path $repoRoot 'third_party/IntelMSR.bin'
 $noticePath = Join-Path $repoRoot 'third_party/NOTICE.md'
 $licensePath = Join-Path $repoRoot 'third_party/LICENSE.LGPL-2.1.txt'

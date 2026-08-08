@@ -7,6 +7,42 @@ using Microsoft.Win32.SafeHandles;
 
 namespace BatteryChargeMeter
 {
+    internal sealed class EmiDiscoveryResult
+    {
+        private readonly List<string> selectedChannels;
+        private readonly List<string> discoveredChannels;
+        private readonly List<string> errors;
+
+        public EmiDiscoveryResult(
+            string devicePath,
+            IList<string> selectedChannels,
+            IList<string> discoveredChannels,
+            IList<string> errors)
+        {
+            DevicePath = devicePath;
+            this.selectedChannels = new List<string>(selectedChannels);
+            this.discoveredChannels = new List<string>(discoveredChannels);
+            this.errors = new List<string>(errors);
+        }
+
+        public string DevicePath { get; private set; }
+
+        public IList<string> SelectedChannels
+        {
+            get { return selectedChannels.AsReadOnly(); }
+        }
+
+        public IList<string> DiscoveredChannels
+        {
+            get { return discoveredChannels.AsReadOnly(); }
+        }
+
+        public IList<string> Errors
+        {
+            get { return errors.AsReadOnly(); }
+        }
+    }
+
     /// <summary>
     /// Reads CPU package power from the Windows Energy Meter Interface
     /// (GUID_DEVICE_ENERGY_METER). EMI needs no driver install and no
@@ -17,7 +53,7 @@ namespace BatteryChargeMeter
     /// its own timestamps; those are used rather than wall-clock timing so the
     /// window is not distorted by this process being descheduled.
     /// </summary>
-    internal sealed class EmiSensor : IDisposable
+    internal sealed class EmiSensor
     {
         private const string PackageChannelSuffix = "_PKG";
 
@@ -43,22 +79,15 @@ namespace BatteryChargeMeter
                     return;
                 }
 
-                List<string> selectedChannels;
-                List<string> allChannels;
-                List<string> errors;
-                devicePath = SelectPackageDevice(
-                    paths,
-                    ReadChannels,
-                    out selectedChannels,
-                    out allChannels,
-                    out errors);
-                discoveredChannels.AddRange(allChannels);
-                discoveryErrors.AddRange(errors);
+                EmiDiscoveryResult discovery = SelectPackageDevice(paths, ReadChannels);
+                devicePath = discovery.DevicePath;
+                discoveredChannels.AddRange(discovery.DiscoveredChannels);
+                discoveryErrors.AddRange(discovery.Errors);
 
                 if (devicePath != null)
                 {
-                    channelNames.AddRange(selectedChannels);
-                    packageChannelIndex = IndexOfPackageChannel(selectedChannels);
+                    channelNames.AddRange(discovery.SelectedChannels);
+                    packageChannelIndex = IndexOfPackageChannel(discovery.SelectedChannels);
                 }
 
                 if (packageChannelIndex < 0)
@@ -93,19 +122,16 @@ namespace BatteryChargeMeter
             get { return discoveryErrors.AsReadOnly(); }
         }
 
-        internal static string SelectPackageDevice(
+        internal static EmiDiscoveryResult SelectPackageDevice(
             IList<string> paths,
-            Func<string, List<string>> readChannels,
-            out List<string> selectedChannels,
-            out List<string> allChannels,
-            out List<string> errors)
+            Func<string, List<string>> readChannels)
         {
-            selectedChannels = new List<string>();
-            allChannels = new List<string>();
-            errors = new List<string>();
+            List<string> selectedChannels = new List<string>();
+            List<string> allChannels = new List<string>();
+            List<string> errors = new List<string>();
 
             if (paths == null || readChannels == null)
-                return null;
+                return new EmiDiscoveryResult(null, selectedChannels, allChannels, errors);
 
             foreach (string path in paths)
             {
@@ -128,10 +154,10 @@ namespace BatteryChargeMeter
                     continue;
 
                 selectedChannels.AddRange(names);
-                return path;
+                return new EmiDiscoveryResult(path, selectedChannels, allChannels, errors);
             }
 
-            return null;
+            return new EmiDiscoveryResult(null, selectedChannels, allChannels, errors);
         }
 
         private static List<string> ReadChannels(string path)
@@ -171,7 +197,7 @@ namespace BatteryChargeMeter
             return readChannelNames(reader, version);
         }
 
-        private static int IndexOfPackageChannel(List<string> names)
+        private static int IndexOfPackageChannel(IList<string> names)
         {
             for (int i = 0; i < names.Count; i++)
             {
@@ -268,9 +294,6 @@ namespace BatteryChargeMeter
             return !Double.IsNaN(watts) && !Double.IsInfinity(watts);
         }
 
-        public void Dispose()
-        {
-        }
     }
 
     internal static class NativeEmi

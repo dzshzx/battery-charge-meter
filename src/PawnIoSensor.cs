@@ -227,9 +227,9 @@ namespace BatteryChargeMeter
         }
 
         /// <summary>
-        /// The IntelMSR module is embedded so the program stays a single file,
-        /// but a same-named file beside the executable wins. That ordering is
-        /// deliberate: it lets a user swap in their own build of this
+        /// The IntelMSR module is embedded so the portable application remains
+        /// self-contained, but a same-named file beside the executable wins.
+        /// That ordering lets a user swap in their own build of this
         /// LGPL-licensed module, which is what its licence requires, and it
         /// also allows testing a newer upstream module without a rebuild.
         /// </summary>

@@ -20,9 +20,10 @@ power; see the "平台功率" section of the README.
 | Source bundle SHA-256 | `afb96a3d6f562350d3cd0b0af1ca3dc5c3d53ff6dc4d28b15d23f015b2a4030d` |
 
 The file is redistributed unmodified and is embedded into the executable as a
-managed resource so that the program stays a single file. Placing a file named
-`IntelMSR.bin` beside the executable overrides the embedded copy, which is how
-the LGPL requirement to allow replacing the library is satisfied.
+managed resource so that the portable application remains self-contained.
+Placing a file named `IntelMSR.bin` beside the executable overrides the embedded
+copy, which is how the LGPL requirement to allow replacing the library is
+satisfied.
 
 Rebuilding it from source needs the PawnIO compiler toolchain from the upstream
 project. The corresponding upstream tag archive is vendored beside the binary;
@@ -32,8 +33,10 @@ artefact is vendored here only so that a normal build does not need that
 toolchain or network access.
 
 Every GitHub Release publishes the source bundle and a standalone third-party
-notice next to the executable. The same notice and licence are also embedded in
-the EXE and can be extracted with `--third-party-notices <path>`.
+notice beside the portable executable and installer. The installer also places
+that notice and the LGPL-2.1 text beside the installed application. The same
+notice and licence are embedded in the EXE and can be extracted with
+`--third-party-notices <path>`.
 
 ## PawnIO driver and PawnIOLib
 

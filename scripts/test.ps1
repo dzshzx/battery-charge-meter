@@ -6,6 +6,8 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
 $distDir = Join-Path $repoRoot 'dist'
 $manifestPath = Join-Path $repoRoot 'src\BatteryChargeMeter.manifest'
+$releaseWorkflowPath = Join-Path $repoRoot '.github\workflows\release.yml'
+$installerScriptPath = Join-Path $repoRoot 'installer\BatteryChargeMeter.iss'
 $modulePath = Join-Path $repoRoot 'third_party\IntelMSR.bin'
 $licensePath = Join-Path $repoRoot 'third_party\LICENSE.LGPL-2.1.txt'
 $sourceBundlePath = Join-Path $repoRoot 'third_party\PawnIO.Modules-0.2.10-source.zip'
@@ -35,6 +37,31 @@ if ($executionLevel -ne 'asInvoker') {
     throw "Expected the portable app to run asInvoker; found: $executionLevel"
 }
 
+$releaseWorkflow = Get-Content -LiteralPath $releaseWorkflowPath -Raw
+foreach ($requiredFragment in @(
+    "-Formats 'Portable', 'Installer'",
+    'installer=$($package.InstallerPath)',
+    'installer_checksum=$($package.InstallerChecksumPath)',
+    '${{ steps.package.outputs.installer }}#Windows installer',
+    '${{ steps.package.outputs.installer_checksum }}#Installer SHA-256 checksum'
+)) {
+    if (-not $releaseWorkflow.Contains($requiredFragment)) {
+        throw "Release workflow does not publish the selectable installer format: $requiredFragment"
+    }
+}
+
+$installerScript = Get-Content -LiteralPath $installerScriptPath -Raw
+foreach ($requiredFragment in @(
+    'PrivilegesRequired=lowest',
+    'DestName: "BatteryChargeMeter.exe"',
+    'DestName: "THIRD-PARTY-NOTICES.txt"',
+    'DestName: "LICENSE.LGPL-2.1.txt"'
+)) {
+    if (-not $installerScript.Contains($requiredFragment)) {
+        throw "Installer definition is missing a required package contract: $requiredFragment"
+    }
+}
+
 if (Test-Path -LiteralPath $distDir) {
     Remove-Item -LiteralPath $distDir -Recurse -Force
 }
@@ -48,10 +75,14 @@ $artifacts = @(
         Sort-Object -Property Name
 )
 
-if ($artifacts.Count -ne 1 -or $artifacts[0].Name -ne 'BatteryChargeMeter.exe') {
-    $actualNames = ($artifacts | ForEach-Object Name) -join ', '
-    throw "Expected one standalone BatteryChargeMeter.exe artifact; found: $actualNames"
+$executableArtifacts = @($artifacts | Where-Object Name -eq 'BatteryChargeMeter.exe')
+if ($executableArtifacts.Count -ne 1) {
+    throw 'The build must produce BatteryChargeMeter.exe.'
 }
+if (Test-Path -LiteralPath (Join-Path $distDir 'stale-build-output.txt')) {
+    throw 'The build did not clean stale output.'
+}
+$executableArtifact = $executableArtifacts[0]
 
 $metadataProbe = @'
 $assembly = [Reflection.Assembly]::LoadFile($env:BATTERY_CHARGE_METER_TEST_ASSEMBLY)
@@ -64,7 +95,7 @@ if ($targetFramework) {
 '@
 $previousAssemblyPath = $env:BATTERY_CHARGE_METER_TEST_ASSEMBLY
 try {
-    $env:BATTERY_CHARGE_METER_TEST_ASSEMBLY = $artifacts[0].FullName
+    $env:BATTERY_CHARGE_METER_TEST_ASSEMBLY = $executableArtifact.FullName
     $powerShellPath = (Get-Process -Id $PID).Path
     $targetFrameworkName = & $powerShellPath -NoProfile -Command $metadataProbe
     if ($LASTEXITCODE -ne 0) {
@@ -84,12 +115,13 @@ $probeDir = Join-Path ([IO.Path]::GetTempPath()) (
 $dpiProcess = $null
 $dpiReturnProcess = $null
 $noticeProcess = $null
+$embeddedNoticesBytes = $null
 
 try {
     New-Item -ItemType Directory -Path $probeDir | Out-Null
     $probeExe = Join-Path $probeDir 'BatteryChargeMeter.exe'
     $previewPath = Join-Path $probeDir 'tray-preview.png'
-    Copy-Item -LiteralPath $artifacts[0].FullName -Destination $probeExe
+    Copy-Item -LiteralPath $executableArtifact.FullName -Destination $probeExe
 
     $embeddedNoticesPath = Join-Path $probeDir 'third-party-notices.txt'
     $noticeProcess = Start-Process `
@@ -107,6 +139,7 @@ try {
     }
 
     $embeddedNotices = Get-Content -LiteralPath $embeddedNoticesPath -Raw
+    $embeddedNoticesBytes = [IO.File]::ReadAllBytes($embeddedNoticesPath)
     if ($embeddedNotices -notmatch 'GNU LESSER GENERAL PUBLIC LICENSE' -or
         $embeddedNotices -notmatch 'PawnIO.Modules-0.2.10-source.zip') {
         throw 'Embedded third-party notices are incomplete.'
@@ -119,10 +152,10 @@ try {
         -PassThru
 
     if ($process.ExitCode -ne 0) {
-        throw "Standalone EXE smoke test failed with exit code $($process.ExitCode)."
+        throw "Portable EXE smoke test failed with exit code $($process.ExitCode)."
     }
     if (-not (Test-Path -LiteralPath $previewPath)) {
-        throw 'Standalone EXE smoke test did not create the tray preview.'
+        throw 'Portable EXE smoke test did not create the tray preview.'
     }
 
     $dpiPreviewPath = Join-Path $probeDir 'dpi-preview.png'
@@ -223,13 +256,48 @@ $packageDir = Join-Path ([IO.Path]::GetTempPath()) (
 
 try {
     New-Item -ItemType Directory -Path $packageDir | Out-Null
+    $installerCompilerPath = @(
+        (Get-Command 'ISCC.exe' -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -First 1),
+        (Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'),
+        (Join-Path $env:ProgramFiles 'Inno Setup 6\ISCC.exe')
+    ) | Where-Object { $_ -and (Test-Path -LiteralPath $_) } | Select-Object -First 1
+    $usingRealInstallerCompiler = [bool]$installerCompilerPath
+
+    if (-not $installerCompilerPath) {
+        $installerCompilerPath = Join-Path $packageDir 'fake-iscc.ps1'
+        @'
+param(
+    [Parameter(ValueFromRemainingArguments = $true)]
+    [string[]]$CompilerArguments
+)
+$outputDirectory = $null
+$outputBaseName = $null
+foreach ($argument in $CompilerArguments) {
+    if ($argument -like '/DOutputDir=*') {
+        $outputDirectory = $argument.Substring('/DOutputDir='.Length)
+    }
+    elseif ($argument -like '/DOutputBaseFilename=*') {
+        $outputBaseName = $argument.Substring('/DOutputBaseFilename='.Length)
+    }
+}
+if (-not $outputDirectory -or -not $outputBaseName) {
+    throw 'Missing installer output definitions.'
+}
+Set-Content -LiteralPath (Join-Path $outputDirectory "$outputBaseName.exe") -Value 'fake installer'
+'@ | Set-Content -LiteralPath $installerCompilerPath -Encoding utf8
+    }
+
     $package = & (Join-Path $PSScriptRoot 'package-release.ps1') `
         -Tag 'v9.8.7' `
-        -ExecutablePath $artifacts[0].FullName `
-        -OutputDirectory $packageDir
+        -ExecutablePath $executableArtifact.FullName `
+        -OutputDirectory $packageDir `
+        -Formats @('Portable', 'Installer') `
+        -InstallerCompilerPath $installerCompilerPath
 
     $expectedBinaryName = 'BatteryChargeMeter-v9.8.7-windows.exe'
     $expectedChecksumName = "$expectedBinaryName.sha256"
+    $expectedInstallerName = 'BatteryChargeMeter-v9.8.7-windows-setup.exe'
+    $expectedInstallerChecksumName = "$expectedInstallerName.sha256"
     $expectedNoticesName = 'BatteryChargeMeter-THIRD-PARTY-NOTICES.txt'
     $expectedSourceName = 'PawnIO.Modules-0.2.10-source.zip'
     if ((Split-Path -Leaf $package.BinaryPath) -ne $expectedBinaryName) {
@@ -237,6 +305,12 @@ try {
     }
     if ((Split-Path -Leaf $package.ChecksumPath) -ne $expectedChecksumName) {
         throw "Unexpected Release checksum name: $($package.ChecksumPath)"
+    }
+    if ((Split-Path -Leaf $package.InstallerPath) -ne $expectedInstallerName) {
+        throw "Unexpected installer name: $($package.InstallerPath)"
+    }
+    if ((Split-Path -Leaf $package.InstallerChecksumPath) -ne $expectedInstallerChecksumName) {
+        throw "Unexpected installer checksum name: $($package.InstallerChecksumPath)"
     }
     if ((Split-Path -Leaf $package.NoticesPath) -ne $expectedNoticesName) {
         throw "Unexpected third-party notices name: $($package.NoticesPath)"
@@ -258,18 +332,91 @@ try {
         $releaseNotices -notmatch 'PawnIO.Modules-0.2.10-source.zip') {
         throw 'Release third-party notices are incomplete.'
     }
+    $releaseNoticesBytes = [IO.File]::ReadAllBytes($package.NoticesPath)
+    if ([Convert]::ToBase64String($releaseNoticesBytes) -ne
+        [Convert]::ToBase64String($embeddedNoticesBytes)) {
+        throw 'Release notices differ from the application notice export.'
+    }
 
     $expectedHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $package.BinaryPath).Hash.ToLowerInvariant()
     $actualChecksum = (Get-Content -LiteralPath $package.ChecksumPath -Raw).Trim()
     if ($actualChecksum -ne "$expectedHash  $expectedBinaryName") {
         throw "Unexpected Release checksum content: $actualChecksum"
     }
+    $expectedInstallerHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $package.InstallerPath).Hash.ToLowerInvariant()
+    $actualInstallerChecksum = (Get-Content -LiteralPath $package.InstallerChecksumPath -Raw).Trim()
+    if ($actualInstallerChecksum -ne "$expectedInstallerHash  $expectedInstallerName") {
+        throw "Unexpected installer checksum content: $actualInstallerChecksum"
+    }
 
-    $archives = @(Get-ChildItem -LiteralPath $packageDir -Filter '*.zip' -File)
-    if ($archives.Count -ne 0) {
-        $nonSourceArchives = @($archives | Where-Object Name -ne $expectedSourceName)
-        if ($nonSourceArchives.Count -ne 0) {
-            throw 'Release package must not wrap the executable in a ZIP archive.'
+    $installerOnlyDir = Join-Path $packageDir 'installer-only'
+    $installerOnly = & (Join-Path $PSScriptRoot 'package-release.ps1') `
+        -Tag 'v9.8.7' `
+        -ExecutablePath $executableArtifact.FullName `
+        -OutputDirectory $installerOnlyDir `
+        -Formats 'Installer' `
+        -InstallerCompilerPath $installerCompilerPath
+    if ($installerOnly.BinaryPath -or $installerOnly.ChecksumPath -or
+        -not (Test-Path -LiteralPath $installerOnly.InstallerPath)) {
+        throw 'Installer-only packaging did not honor the selected Release format.'
+    }
+
+    $portableOnlyDir = Join-Path $packageDir 'portable-only'
+    $portableOnly = & (Join-Path $PSScriptRoot 'package-release.ps1') `
+        -Tag 'v9.8.7' `
+        -ExecutablePath $executableArtifact.FullName `
+        -OutputDirectory $portableOnlyDir `
+        -Formats 'Portable'
+    if ($portableOnly.InstallerPath -or $portableOnly.InstallerChecksumPath -or
+        -not (Test-Path -LiteralPath $portableOnly.BinaryPath)) {
+        throw 'Portable-only packaging did not honor the selected Release format.'
+    }
+
+    if ($usingRealInstallerCompiler) {
+        $installDir = Join-Path $packageDir 'installed-application'
+        $installProcess = Start-Process `
+            -FilePath $package.InstallerPath `
+            -ArgumentList @(
+                '/VERYSILENT',
+                '/SUPPRESSMSGBOXES',
+                '/NORESTART',
+                ('/DIR="{0}"' -f $installDir)
+            ) `
+            -Wait `
+            -PassThru
+        if ($installProcess.ExitCode -ne 0) {
+            throw "Silent installer smoke test failed with exit code $($installProcess.ExitCode)."
+        }
+
+        foreach ($installedFile in @(
+            'BatteryChargeMeter.exe',
+            'THIRD-PARTY-NOTICES.txt',
+            'LICENSE.LGPL-2.1.txt'
+        )) {
+            if (-not (Test-Path -LiteralPath (Join-Path $installDir $installedFile))) {
+                throw "Installer omitted required file: $installedFile"
+            }
+        }
+
+        $uninstallerPath = Join-Path $installDir 'unins000.exe'
+        if (-not (Test-Path -LiteralPath $uninstallerPath)) {
+            throw 'Installer did not create an uninstaller.'
+        }
+        $uninstallProcess = Start-Process `
+            -FilePath $uninstallerPath `
+            -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART') `
+            -Wait `
+            -PassThru
+        if ($uninstallProcess.ExitCode -ne 0) {
+            throw "Silent uninstaller smoke test failed with exit code $($uninstallProcess.ExitCode)."
+        }
+        $uninstallDeadline = [DateTime]::UtcNow.AddSeconds(5)
+        while ((Test-Path -LiteralPath $uninstallerPath) -and
+            [DateTime]::UtcNow -lt $uninstallDeadline) {
+            Start-Sleep -Milliseconds 100
+        }
+        if (Test-Path -LiteralPath $uninstallerPath) {
+            throw 'Silent uninstaller did not finish removing the application.'
         }
     }
 }
@@ -305,4 +452,4 @@ finally {
     Remove-Item -LiteralPath $selfTestDir -Recurse -Force -ErrorAction SilentlyContinue
 }
 
-Write-Host 'Standalone EXE and Release package tests passed.'
+Write-Host 'Application and Release package tests passed.'
