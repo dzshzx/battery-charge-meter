@@ -8,14 +8,9 @@
   <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">
     <security>
       <requestedPrivileges>
-        <!--
-          Elevation is requested up front because the platform power source
-          (Intel Psys via PawnIO) is unreachable without it: PawnIO installs its
-          device with D:P(A;;GA;;;SY)(A;;GA;;;BA), granting access only to
-          SYSTEM and administrators. Asking once at launch is preferred over
-          silently degrading a headline metric for the whole session.
-        -->
-        <requestedExecutionLevel level="requireAdministrator" uiAccess="false" />
+        <!-- Battery and EMI measurements need no elevation. PawnIO platform
+             power is optional and reports that an elevated launch is needed. -->
+        <requestedExecutionLevel level="asInvoker" uiAccess="false" />
       </requestedPrivileges>
     </security>
   </trustInfo>

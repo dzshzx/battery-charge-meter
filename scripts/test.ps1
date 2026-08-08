@@ -5,6 +5,35 @@ $ErrorActionPreference = 'Stop'
 
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
 $distDir = Join-Path $repoRoot 'dist'
+$manifestPath = Join-Path $repoRoot 'src\BatteryChargeMeter.manifest'
+$modulePath = Join-Path $repoRoot 'third_party\IntelMSR.bin'
+$licensePath = Join-Path $repoRoot 'third_party\LICENSE.LGPL-2.1.txt'
+$sourceBundlePath = Join-Path $repoRoot 'third_party\PawnIO.Modules-0.2.10-source.zip'
+
+if (-not (Test-Path -LiteralPath $licensePath)) {
+    throw "Missing bundled LGPL-2.1 license: $licensePath"
+}
+if (-not (Test-Path -LiteralPath $sourceBundlePath)) {
+    throw "Missing corresponding PawnIO.Modules source bundle: $sourceBundlePath"
+}
+$expectedModuleHash = 'd6ed85d65ab17a22f813ef98207d6d537155ee2ded5976a21cb48413c9b92e5f'
+$expectedLicenseHash = 'dc626520dcd53a22f727af3ee42c770e56c97a64fe3adb063799d8ab032fe551'
+$expectedSourceBundleHash = 'afb96a3d6f562350d3cd0b0af1ca3dc5c3d53ff6dc4d28b15d23f015b2a4030d'
+if ((Get-FileHash -Algorithm SHA256 -LiteralPath $modulePath).Hash.ToLowerInvariant() -ne $expectedModuleHash) {
+    throw 'The vendored IntelMSR.bin does not match the pinned PawnIO.Modules 0.2.10 module.'
+}
+if ((Get-FileHash -Algorithm SHA256 -LiteralPath $licensePath).Hash.ToLowerInvariant() -ne $expectedLicenseHash) {
+    throw 'The vendored LGPL-2.1 text does not match the pinned upstream copy.'
+}
+if ((Get-FileHash -Algorithm SHA256 -LiteralPath $sourceBundlePath).Hash.ToLowerInvariant() -ne $expectedSourceBundleHash) {
+    throw 'The vendored PawnIO.Modules source bundle does not match the pinned 0.2.10 archive.'
+}
+
+[xml]$manifest = Get-Content -LiteralPath $manifestPath
+$executionLevel = $manifest.assembly.trustInfo.security.requestedPrivileges.requestedExecutionLevel.level
+if ($executionLevel -ne 'asInvoker') {
+    throw "Expected the portable app to run asInvoker; found: $executionLevel"
+}
 
 if (Test-Path -LiteralPath $distDir) {
     Remove-Item -LiteralPath $distDir -Recurse -Force
@@ -54,12 +83,34 @@ $probeDir = Join-Path ([IO.Path]::GetTempPath()) (
 )
 $dpiProcess = $null
 $dpiReturnProcess = $null
+$noticeProcess = $null
 
 try {
     New-Item -ItemType Directory -Path $probeDir | Out-Null
     $probeExe = Join-Path $probeDir 'BatteryChargeMeter.exe'
     $previewPath = Join-Path $probeDir 'tray-preview.png'
     Copy-Item -LiteralPath $artifacts[0].FullName -Destination $probeExe
+
+    $embeddedNoticesPath = Join-Path $probeDir 'third-party-notices.txt'
+    $noticeProcess = Start-Process `
+        -FilePath $probeExe `
+        -ArgumentList @('--third-party-notices', ('"{0}"' -f $embeddedNoticesPath)) `
+        -PassThru
+
+    if (-not $noticeProcess.WaitForExit(5000)) {
+        $noticeProcess.Kill()
+        $noticeProcess.WaitForExit()
+        throw 'Embedded third-party notice extraction did not exit.'
+    }
+    if ($noticeProcess.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $embeddedNoticesPath)) {
+        throw 'Embedded third-party notice extraction failed.'
+    }
+
+    $embeddedNotices = Get-Content -LiteralPath $embeddedNoticesPath -Raw
+    if ($embeddedNotices -notmatch 'GNU LESSER GENERAL PUBLIC LICENSE' -or
+        $embeddedNotices -notmatch 'PawnIO.Modules-0.2.10-source.zip') {
+        throw 'Embedded third-party notices are incomplete.'
+    }
 
     $process = Start-Process `
         -FilePath $probeExe `
@@ -97,12 +148,19 @@ try {
 
     $dpiMetadata = Get-Content -LiteralPath $dpiMetadataPath -Raw
     if ($dpiMetadata -notmatch 'HandledDpi=192(?=;|$)' -or
-        $dpiMetadata -notmatch 'Client=860x1000(?=;|$)' -or
+        $dpiMetadata -notmatch 'Content=860x1000(?=;|$)' -or
         $dpiMetadata -notmatch 'FormFontPixels=24(?:\.0+)?(?=;|$)' -or
         $dpiMetadata -notmatch 'PowerFontPixels=112(?:\.0+)?(?=;|$)' -or
+        $dpiMetadata -notmatch 'AutoScroll=True(?=;|$)' -or
         $dpiMetadata -notmatch 'WindowPositionApplied=True(?=;|$)' -or
         $dpiMetadata -notmatch 'WindowPositionMatched=True(?=;|$)') {
         throw "Unexpected DPI transition metadata: $dpiMetadata"
+    }
+    if ($dpiMetadata -notmatch 'Client=(?<width>\d+)x(?<height>\d+)(?=;|$)') {
+        throw "Missing DPI viewport metadata: $dpiMetadata"
+    }
+    if ([int]$Matches.width -gt 860 -or [int]$Matches.height -gt 1000) {
+        throw "DPI viewport exceeds its scrollable content: $dpiMetadata"
     }
 
     $dpiReturnPreviewPath = Join-Path $probeDir 'dpi-return-preview.png'
@@ -133,7 +191,7 @@ try {
 
     $dpiReturnMetadata = Get-Content -LiteralPath $dpiReturnMetadataPath -Raw
     if ($dpiReturnMetadata -notmatch 'HandledDpi=96(?=;|$)' -or
-        $dpiReturnMetadata -notmatch 'Client=430x500(?=;|$)' -or
+        $dpiReturnMetadata -notmatch 'Content=430x500(?=;|$)' -or
         $dpiReturnMetadata -notmatch 'FormFontPixels=12(?:\.0+)?(?=;|$)' -or
         $dpiReturnMetadata -notmatch 'PowerFontPixels=56(?:\.0+)?(?=;|$)' -or
         $dpiReturnMetadata -notmatch 'WindowPositionApplied=True(?=;|$)' -or
@@ -149,6 +207,10 @@ finally {
     if ($dpiReturnProcess -and -not $dpiReturnProcess.HasExited) {
         $dpiReturnProcess.Kill()
         $dpiReturnProcess.WaitForExit()
+    }
+    if ($noticeProcess -and -not $noticeProcess.HasExited) {
+        $noticeProcess.Kill()
+        $noticeProcess.WaitForExit()
     }
     if (Test-Path -LiteralPath $probeDir) {
         Remove-Item -LiteralPath $probeDir -Recurse -Force
@@ -168,11 +230,33 @@ try {
 
     $expectedBinaryName = 'BatteryChargeMeter-v9.8.7-windows.exe'
     $expectedChecksumName = "$expectedBinaryName.sha256"
+    $expectedNoticesName = 'BatteryChargeMeter-THIRD-PARTY-NOTICES.txt'
+    $expectedSourceName = 'PawnIO.Modules-0.2.10-source.zip'
     if ((Split-Path -Leaf $package.BinaryPath) -ne $expectedBinaryName) {
         throw "Unexpected Release binary name: $($package.BinaryPath)"
     }
     if ((Split-Path -Leaf $package.ChecksumPath) -ne $expectedChecksumName) {
         throw "Unexpected Release checksum name: $($package.ChecksumPath)"
+    }
+    if ((Split-Path -Leaf $package.NoticesPath) -ne $expectedNoticesName) {
+        throw "Unexpected third-party notices name: $($package.NoticesPath)"
+    }
+    if ((Split-Path -Leaf $package.SourceBundlePath) -ne $expectedSourceName) {
+        throw "Unexpected third-party source bundle name: $($package.SourceBundlePath)"
+    }
+    if (-not (Test-Path -LiteralPath $package.NoticesPath) -or
+        -not (Test-Path -LiteralPath $package.SourceBundlePath)) {
+        throw 'Release compliance assets were not created.'
+    }
+    if ((Get-FileHash -Algorithm SHA256 -LiteralPath $package.SourceBundlePath).Hash.ToLowerInvariant() -ne
+        $expectedSourceBundleHash) {
+        throw 'Release source bundle hash differs from the pinned upstream archive.'
+    }
+
+    $releaseNotices = Get-Content -LiteralPath $package.NoticesPath -Raw
+    if ($releaseNotices -notmatch 'GNU LESSER GENERAL PUBLIC LICENSE' -or
+        $releaseNotices -notmatch 'PawnIO.Modules-0.2.10-source.zip') {
+        throw 'Release third-party notices are incomplete.'
     }
 
     $expectedHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $package.BinaryPath).Hash.ToLowerInvariant()
@@ -183,7 +267,10 @@ try {
 
     $archives = @(Get-ChildItem -LiteralPath $packageDir -Filter '*.zip' -File)
     if ($archives.Count -ne 0) {
-        throw 'Release package must not require a ZIP archive.'
+        $nonSourceArchives = @($archives | Where-Object Name -ne $expectedSourceName)
+        if ($nonSourceArchives.Count -ne 0) {
+            throw 'Release package must not wrap the executable in a ZIP archive.'
+        }
     }
 }
 finally {
@@ -201,7 +288,7 @@ New-Item -ItemType Directory -Path $selfTestDir | Out-Null
 try {
     $selfTestPath = Join-Path $selfTestDir 'self-test.txt'
     $selfTestProcess = Start-Process -FilePath $artifacts[0].FullName `
-        -ArgumentList '--self-test', $selfTestPath -Wait -PassThru
+        -ArgumentList '--self-test', ('"{0}"' -f $selfTestPath) -Wait -PassThru
 
     if (-not (Test-Path -LiteralPath $selfTestPath)) {
         throw 'Power self test did not produce a report.'

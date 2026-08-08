@@ -24,9 +24,10 @@ namespace BatteryChargeMeter
     /// figure from them.
     ///
     /// The battery terminal figure is not handled here; it comes from
-    /// <see cref="BatterySensor"/> and is always available. Everything this
-    /// class adds is capability-discovered at runtime and degrades to an
-    /// explicit unsupported reason rather than to a substituted number.
+    /// <see cref="BatterySensor"/> and carries its own availability state.
+    /// Everything this class adds is capability-discovered at runtime and
+    /// degrades to an explicit unsupported reason rather than to a substituted
+    /// number.
     /// </summary>
     internal sealed class PowerSources : IDisposable
     {
@@ -61,6 +62,11 @@ namespace BatteryChargeMeter
             get { return emi.DiscoveredChannels; }
         }
 
+        public IList<string> EmiDiscoveryErrors
+        {
+            get { return emi.DiscoveryErrors; }
+        }
+
         public PowerSnapshot Read(BatteryReading battery)
         {
             PowerSnapshot snapshot = new PowerSnapshot();
@@ -71,7 +77,7 @@ namespace BatteryChargeMeter
             bool platformRead = pawnIo.TryRead(out platform, out msrPackageWatts);
 
             if (platformRead)
-                platform = Validate(platform, snapshot.CpuPackage, msrPackageWatts);
+                platform = ValidatePlatform(platform, snapshot.CpuPackage, msrPackageWatts);
 
             snapshot.Platform = platform;
             snapshot.WholeSystem = DeriveWholeSystem(platform, battery);
@@ -81,18 +87,20 @@ namespace BatteryChargeMeter
         /// <summary>
         /// Confirms the RAPL energy unit on this machine by checking the MSR
         /// package figure against the EMI package figure, which is produced by a
-        /// wholly separate interface. Only the platform figure is derived from
-        /// an assumed unit, so if the package figures agree the platform figure
-        /// is trustworthy; if they do not, the scaling is wrong and no platform
-        /// number should be shown.
+        /// wholly separate interface. Agreement raises confidence and a direct
+        /// disagreement withholds the value. Missing EMI is not a Psys capability
+        /// failure, so the platform reading remains available but is labelled as
+        /// not cross-validated.
         /// </summary>
-        private static PowerSample Validate(
+        internal static PowerSample ValidatePlatform(
             PowerSample platform, PowerSample emiPackage, double msrPackageWatts)
         {
             if (emiPackage == null || !emiPackage.Available)
             {
-                return PowerSample.Unsupported(
-                    PowerBoundary.Platform, "缺少 EMI 对照量，无法校验单位换算");
+                platform.Source = String.IsNullOrEmpty(platform.Source)
+                    ? "未交叉验证"
+                    : platform.Source + "（EMI 未交叉验证）";
+                return platform;
             }
 
             double difference = Math.Abs(msrPackageWatts - emiPackage.Watts);
@@ -137,6 +145,15 @@ namespace BatteryChargeMeter
             if (battery == null)
                 return PowerSample.Unsupported(PowerBoundary.SystemLoad, "电池状态不可用");
 
+            if (!battery.StatusAvailable)
+            {
+                return PowerSample.Unsupported(
+                    PowerBoundary.SystemLoad,
+                    String.IsNullOrEmpty(battery.StatusUnavailableReason)
+                        ? "电池状态不可用"
+                        : battery.StatusUnavailableReason);
+            }
+
             if (!battery.PowerOnline)
             {
                 if (!battery.RateAvailable)
@@ -166,10 +183,23 @@ namespace BatteryChargeMeter
                     PowerBoundary.EstimatedSystemInput, "电池速率不可用");
             }
 
+            double estimatedWatts = platform.Watts + battery.PowerWatts;
+            if (Double.IsNaN(estimatedWatts) || Double.IsInfinity(estimatedWatts))
+            {
+                return PowerSample.Unsupported(
+                    PowerBoundary.EstimatedSystemInput, "估算结果不是有限数值");
+            }
+            if (estimatedWatts < 0.0)
+            {
+                return PowerSample.Unsupported(
+                    PowerBoundary.EstimatedSystemInput,
+                    "估算结果为负，数据边界或采样窗口不一致");
+            }
+
             return PowerSample.FromValue(
                 PowerBoundary.EstimatedSystemInput,
                 MeasurementKind.Estimated,
-                platform.Watts + battery.PowerWatts,
+                estimatedWatts,
                 "平台功率 + 电池端净功率",
                 platform.Window);
         }

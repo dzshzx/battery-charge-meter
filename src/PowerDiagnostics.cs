@@ -27,6 +27,7 @@ namespace BatteryChargeMeter
                 output.AppendLine("  CPU package (EMI): " + sources.CpuPackageStatus);
                 output.AppendLine("  Platform (PawnIO): " + sources.PlatformStatus);
                 output.AppendLine("  EMI channels: " + DescribeChannels(sources.EmiChannels));
+                output.AppendLine("  EMI discovery errors: " + DescribeChannels(sources.EmiDiscoveryErrors));
                 output.AppendLine();
 
                 // The energy counters are cumulative, so one tick is spent

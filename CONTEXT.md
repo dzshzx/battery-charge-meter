@@ -25,7 +25,7 @@ The power reported by the processor's platform-level energy counter (Intel Psys,
 _Avoid_: System Input Power, System Load Power, CPU Power
 
 **Estimated System Input Power (估算整机输入功率)**:
-System Input Power derived as Platform Power + Battery Charge Power. It omits the charging-path and conversion losses that no available counter measures, so it reads low. Always carry the estimated qualifier; never present it as System Input Power.
+System Input Power derived on external power as Platform Power + signed Net Battery Terminal Power. Charging adds to the estimate; battery supplementation subtracts from it. The result omits charging-path and conversion losses that no available counter measures, so it reads low. Always carry the estimated qualifier; never present it as System Input Power.
 _Avoid_: System Input Power, Measured Input Power
 
 **Wall Input Power (墙端输入功率)**:

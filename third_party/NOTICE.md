@@ -15,6 +15,9 @@ power; see the "平台功率" section of the README.
 | SHA-256 | `d6ed85d65ab17a22f813ef98207d6d537155ee2ded5976a21cb48413c9b92e5f` |
 | Licence | LGPL-2.1-or-later |
 | Source | `IntelMSR.p` in the upstream repository at the tag above |
+| Source commit | `c683032770575d7705d1149f9d7fa7fd381766fc` |
+| Source bundle | `PawnIO.Modules-0.2.10-source.zip` |
+| Source bundle SHA-256 | `afb96a3d6f562350d3cd0b0af1ca3dc5c3d53ff6dc4d28b15d23f015b2a4030d` |
 
 The file is redistributed unmodified and is embedded into the executable as a
 managed resource so that the program stays a single file. Placing a file named
@@ -22,8 +25,15 @@ managed resource so that the program stays a single file. Placing a file named
 the LGPL requirement to allow replacing the library is satisfied.
 
 Rebuilding it from source needs the PawnIO compiler toolchain from the upstream
-project; the compiled artefact is vendored here only so that a normal build of
-this repository does not need that toolchain or network access.
+project. The corresponding upstream tag archive is vendored beside the binary;
+it includes `IntelMSR.p`, the Pawn headers, the compiler source/binary packages,
+the upstream build workflow, and the complete LGPL-2.1 text. The compiled
+artefact is vendored here only so that a normal build does not need that
+toolchain or network access.
+
+Every GitHub Release publishes the source bundle and a standalone third-party
+notice next to the executable. The same notice and licence are also embedded in
+the EXE and can be extracted with `--third-party-notices <path>`.
 
 ## PawnIO driver and PawnIOLib
 

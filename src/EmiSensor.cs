@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Runtime.InteropServices;
+using System.Text;
 using Microsoft.Win32.SafeHandles;
 
 namespace BatteryChargeMeter
@@ -22,6 +23,7 @@ namespace BatteryChargeMeter
 
         private readonly List<string> channelNames = new List<string>();
         private readonly List<string> discoveredChannels = new List<string>();
+        private readonly List<string> discoveryErrors = new List<string>();
         private readonly string devicePath;
         private readonly int packageChannelIndex = -1;
         private readonly string unavailableReason;
@@ -41,29 +43,32 @@ namespace BatteryChargeMeter
                     return;
                 }
 
-                foreach (string path in paths)
+                List<string> selectedChannels;
+                List<string> allChannels;
+                List<string> errors;
+                devicePath = SelectPackageDevice(
+                    paths,
+                    ReadChannels,
+                    out selectedChannels,
+                    out allChannels,
+                    out errors);
+                discoveredChannels.AddRange(allChannels);
+                discoveryErrors.AddRange(errors);
+
+                if (devicePath != null)
                 {
-                    List<string> names = ReadChannels(path);
-                    if (names == null)
-                        continue;
-
-                    discoveredChannels.AddRange(names);
-
-                    int index = IndexOfPackageChannel(names);
-                    if (index < 0)
-                        continue;
-
-                    devicePath = path;
-                    channelNames.AddRange(names);
-                    packageChannelIndex = index;
-                    break;
+                    channelNames.AddRange(selectedChannels);
+                    packageChannelIndex = IndexOfPackageChannel(selectedChannels);
                 }
 
                 if (packageChannelIndex < 0)
                 {
-                    unavailableReason = discoveredChannels.Count == 0
-                        ? "EMI 设备未报告任何通道"
-                        : "EMI 没有 CPU 包功率通道";
+                    if (discoveredChannels.Count > 0)
+                        unavailableReason = "EMI 没有 CPU 包功率通道";
+                    else if (discoveryErrors.Count > 0)
+                        unavailableReason = "EMI 设备不可读: " + discoveryErrors[0];
+                    else
+                        unavailableReason = "EMI 设备未报告任何通道";
                 }
             }
             catch (Exception error)
@@ -83,6 +88,52 @@ namespace BatteryChargeMeter
             get { return discoveredChannels.AsReadOnly(); }
         }
 
+        public IList<string> DiscoveryErrors
+        {
+            get { return discoveryErrors.AsReadOnly(); }
+        }
+
+        internal static string SelectPackageDevice(
+            IList<string> paths,
+            Func<string, List<string>> readChannels,
+            out List<string> selectedChannels,
+            out List<string> allChannels,
+            out List<string> errors)
+        {
+            selectedChannels = new List<string>();
+            allChannels = new List<string>();
+            errors = new List<string>();
+
+            if (paths == null || readChannels == null)
+                return null;
+
+            foreach (string path in paths)
+            {
+                List<string> names;
+                try
+                {
+                    names = readChannels(path);
+                }
+                catch (Exception error)
+                {
+                    errors.Add(path + ": " + error.Message);
+                    continue;
+                }
+
+                if (names == null)
+                    continue;
+
+                allChannels.AddRange(names);
+                if (IndexOfPackageChannel(names) < 0)
+                    continue;
+
+                selectedChannels.AddRange(names);
+                return path;
+            }
+
+            return null;
+        }
+
         private static List<string> ReadChannels(string path)
         {
             using (SafeFileHandle handle = NativeEmi.Open(path))
@@ -90,14 +141,34 @@ namespace BatteryChargeMeter
                 if (handle == null || handle.IsInvalid)
                     return null;
 
-                // V1 metadata has a different layout that this build has never
-                // been able to test against real hardware, so such a device is
-                // skipped rather than parsed on a guess.
-                if (NativeEmi.ReadVersion(handle) != 2)
-                    return null;
-
-                return NativeEmi.ReadChannelNames(handle);
+                return ReadSupportedChannels(
+                    handle,
+                    NativeEmi.ReadVersion,
+                    NativeEmi.ReadChannelNames);
             }
+        }
+
+        /// <summary>
+        /// Runs the live version-to-metadata decision with injectable native
+        /// operations. The production path supplies the EMI IOCTL functions;
+        /// the self test supplies deterministic V1 metadata so a future version
+        /// gate cannot silently make supported V1 devices disappear.
+        /// </summary>
+        internal static List<string> ReadSupportedChannels<TReader>(
+            TReader reader,
+            Func<TReader, ushort> readVersion,
+            Func<TReader, ushort, List<string>> readChannelNames)
+        {
+            if (readVersion == null)
+                throw new ArgumentNullException("readVersion");
+            if (readChannelNames == null)
+                throw new ArgumentNullException("readChannelNames");
+
+            ushort version = readVersion(reader);
+            if (version != 1 && version != 2)
+                return null;
+
+            return readChannelNames(reader, version);
         }
 
         private static int IndexOfPackageChannel(List<string> names)
@@ -152,24 +223,49 @@ namespace BatteryChargeMeter
                 return PowerSample.Unsupported(PowerBoundary.CpuPackage, "正在建立基准");
             }
 
-            ulong energyDelta = energy - previousEnergy;
-            ulong timeDelta = time - previousTime;
+            ulong oldEnergy = previousEnergy;
+            ulong oldTime = previousTime;
             previousEnergy = energy;
             previousTime = time;
 
-            if (timeDelta == 0)
-                return PowerSample.Unsupported(PowerBoundary.CpuPackage, "采样窗口为零");
-
-            // Energy is picowatt-hours, time is 100 ns units.
-            double seconds = timeDelta / 1e7;
-            double watts = (energyDelta / 1e12) * 3600.0 / seconds;
+            double watts;
+            TimeSpan window;
+            if (!TryCalculatePower(oldEnergy, oldTime, energy, time, out watts, out window))
+            {
+                return PowerSample.Unsupported(
+                    PowerBoundary.CpuPackage, "EMI 计数器已重置，正在重建基准");
+            }
 
             return PowerSample.FromValue(
                 PowerBoundary.CpuPackage,
                 MeasurementKind.Measured,
                 watts,
                 "EMI " + channelNames[packageChannelIndex],
-                TimeSpan.FromSeconds(seconds));
+                window);
+        }
+
+        internal static bool TryCalculatePower(
+            ulong oldEnergy,
+            ulong oldTime,
+            ulong energy,
+            ulong time,
+            out double watts,
+            out TimeSpan window)
+        {
+            watts = 0.0;
+            window = TimeSpan.Zero;
+
+            if (energy < oldEnergy || time <= oldTime)
+                return false;
+
+            ulong energyDelta = energy - oldEnergy;
+            ulong timeDelta = time - oldTime;
+
+            // Energy is picowatt-hours, time is 100 ns units.
+            double seconds = timeDelta / 1e7;
+            watts = (energyDelta / 1e12) * 3600.0 / seconds;
+            window = TimeSpan.FromSeconds(seconds);
+            return !Double.IsNaN(watts) && !Double.IsInfinity(watts);
         }
 
         public void Dispose()
@@ -316,17 +412,8 @@ namespace BatteryChargeMeter
             }
         }
 
-        /// <summary>
-        /// EMI_METADATA_V2: HardwareOEM(32B), HardwareModel(32B),
-        /// HardwareRevision(2B), ChannelCount(2B), then per channel
-        /// MeasurementUnit(4B), ChannelNameSize(2B), ChannelName(NameSize).
-        /// Names are space padded to a fixed width and must be trimmed before
-        /// they are compared.
-        /// </summary>
-        public static List<string> ReadChannelNames(SafeFileHandle handle)
+        public static List<string> ReadChannelNames(SafeFileHandle handle, ushort version)
         {
-            List<string> names = new List<string>();
-
             IntPtr sizeBuffer = Marshal.AllocHGlobal(4);
             try
             {
@@ -346,19 +433,9 @@ namespace BatteryChargeMeter
                             handle, IoctlGetMetadata, IntPtr.Zero, 0, metadata, (uint)size, ref returned, IntPtr.Zero))
                         throw new InvalidOperationException("IOCTL_EMI_GET_METADATA 失败");
 
-                    ushort channelCount = (ushort)Marshal.ReadInt16(metadata, 66);
-                    int offset = 68;
-                    for (int i = 0; i < channelCount; i++)
-                    {
-                        ushort nameSize = (ushort)Marshal.ReadInt16(metadata, offset + 4);
-                        if (nameSize < 2 || offset + 6 + nameSize > size)
-                            throw new InvalidOperationException("EMI 通道名越界");
-
-                        string name = Marshal.PtrToStringUni(
-                            IntPtr.Add(metadata, offset + 6), (nameSize / 2) - 1);
-                        names.Add(name.TrimEnd('\0', ' '));
-                        offset += 6 + nameSize;
-                    }
+                    byte[] bytes = new byte[size];
+                    Marshal.Copy(metadata, bytes, 0, size);
+                    return ParseChannelNames(version, bytes);
                 }
                 finally
                 {
@@ -370,7 +447,62 @@ namespace BatteryChargeMeter
                 Marshal.FreeHGlobal(sizeBuffer);
             }
 
+        }
+
+        /// <summary>
+        /// Parses the two metadata layouts defined by emi.h. V1 describes one
+        /// metered hardware channel; V2 carries a variable-length channel list.
+        /// Keeping this byte parser separate lets the self test cover both
+        /// layouts without depending on a particular machine's firmware.
+        /// </summary>
+        internal static List<string> ParseChannelNames(ushort version, byte[] metadata)
+        {
+            if (metadata == null)
+                throw new ArgumentNullException("metadata");
+
+            List<string> names = new List<string>();
+            if (version == 1)
+            {
+                // EMI_METADATA_V1: MeasurementUnit(4B), HardwareOEM(32B),
+                // HardwareModel(32B), HardwareRevision(2B), NameSize(2B), Name.
+                const int nameSizeOffset = 70;
+                const int nameOffset = 72;
+                ushort nameSize = ReadNameSize(metadata, nameSizeOffset, nameOffset);
+                names.Add(DecodeName(metadata, nameOffset, nameSize));
+                return names;
+            }
+
+            if (version != 2 || metadata.Length < 68)
+                throw new InvalidOperationException("不支持的 EMI 元数据版本");
+
+            // EMI_METADATA_V2: HardwareOEM(32B), HardwareModel(32B),
+            // HardwareRevision(2B), ChannelCount(2B), then variable channels.
+            ushort channelCount = BitConverter.ToUInt16(metadata, 66);
+            int offset = 68;
+            for (int i = 0; i < channelCount; i++)
+            {
+                ushort nameSize = ReadNameSize(metadata, offset + 4, offset + 6);
+                names.Add(DecodeName(metadata, offset + 6, nameSize));
+                offset += 6 + nameSize;
+            }
             return names;
+        }
+
+        private static ushort ReadNameSize(byte[] metadata, int sizeOffset, int nameOffset)
+        {
+            if (sizeOffset < 0 || sizeOffset + 2 > metadata.Length)
+                throw new InvalidOperationException("EMI 通道元数据过短");
+
+            ushort nameSize = BitConverter.ToUInt16(metadata, sizeOffset);
+            if (nameSize < 2 || (nameSize & 1) != 0 || nameOffset + nameSize > metadata.Length)
+                throw new InvalidOperationException("EMI 通道名越界");
+            return nameSize;
+        }
+
+        private static string DecodeName(byte[] metadata, int offset, ushort size)
+        {
+            return Encoding.Unicode.GetString(metadata, offset, size)
+                .TrimEnd('\0', ' ');
         }
 
         /// <summary>

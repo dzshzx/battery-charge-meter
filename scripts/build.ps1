@@ -16,9 +16,18 @@ $outputPath = Join-Path $distDir 'BatteryChargeMeter.exe'
 # Embedded so the build stays a single file. A same-named file beside the EXE
 # takes precedence at runtime; see third_party/NOTICE.md.
 $modulePath = Join-Path $repoRoot 'third_party/IntelMSR.bin'
+$noticePath = Join-Path $repoRoot 'third_party/NOTICE.md'
+$licensePath = Join-Path $repoRoot 'third_party/LICENSE.LGPL-2.1.txt'
+$expectedModuleHash = 'd6ed85d65ab17a22f813ef98207d6d537155ee2ded5976a21cb48413c9b92e5f'
 
-if (-not (Test-Path -LiteralPath $modulePath)) {
-    throw "Missing PawnIO module: $modulePath"
+foreach ($resourcePath in @($modulePath, $noticePath, $licensePath)) {
+    if (-not (Test-Path -LiteralPath $resourcePath)) {
+        throw "Missing embedded resource: $resourcePath"
+    }
+}
+
+if ((Get-FileHash -Algorithm SHA256 -LiteralPath $modulePath).Hash.ToLowerInvariant() -ne $expectedModuleHash) {
+    throw 'The vendored IntelMSR.bin does not match the pinned PawnIO.Modules 0.2.10 module.'
 }
 
 $compilerCandidates = @(
@@ -44,6 +53,8 @@ $compilerArguments = @(
     '/optimize+',
     "/win32manifest:$manifestPath",
     "/resource:$modulePath,IntelMSR.bin",
+    "/resource:$noticePath,THIRD_PARTY_NOTICE.md",
+    "/resource:$licensePath,LGPL-2.1.txt",
     "/out:$outputPath",
     '/reference:System.Windows.Forms.dll',
     '/reference:System.Drawing.dll',

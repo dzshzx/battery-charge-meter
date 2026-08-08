@@ -28,16 +28,12 @@ namespace BatteryChargeMeter
         private const uint MsrPkgEnergyStatus = 0x611;
         private const uint MsrPlatformEnergyStatus = 0x64D;
         private const string ModuleFileName = "IntelMSR.bin";
-
         private readonly string unavailableReason;
         private readonly IntPtr handle = IntPtr.Zero;
         private readonly double energyUnitJoules;
 
         private readonly Stopwatch clock = new Stopwatch();
-        private long previousTicks;
-        private ulong previousPkg;
-        private ulong previousPsys;
-        private bool hasPrevious;
+        private readonly RaplSampleTracker sampleTracker = new RaplSampleTracker();
 
         public PawnIoSensor()
         {
@@ -116,12 +112,11 @@ namespace BatteryChargeMeter
         /// <summary>
         /// Samples the platform and package counters over one shared window.
         ///
-        /// The package figure exists only so the caller can check it against the
-        /// independently measured EMI package figure. Agreement is what proves
-        /// the energy-unit scaling is right on this machine; without that check
-        /// a wrong unit would silently scale the platform figure too. RAPL
-        /// energy registers carry no timestamp, so the window has to be measured
-        /// here rather than assumed from the caller's tick interval.
+        /// The package figure lets the caller cross-check the energy-unit scaling
+        /// against an independently measured EMI package figure when one exists.
+        /// Machines without EMI still expose Psys as explicitly unvalidated.
+        /// RAPL energy registers carry no timestamp, so the window has to be
+        /// measured here rather than assumed from the caller's tick interval.
         /// </summary>
         public bool TryRead(out PowerSample platform, out double packageWatts)
         {
@@ -148,52 +143,14 @@ namespace BatteryChargeMeter
                 return false;
             }
 
-            if (!hasPrevious)
-            {
-                previousPkg = pkg;
-                previousPsys = psys;
-                previousTicks = ticks;
-                hasPrevious = true;
-                platform = PowerSample.Unsupported(PowerBoundary.Platform, "正在建立基准");
-                return false;
-            }
-
-            double seconds = (double)(ticks - previousTicks) / Stopwatch.Frequency;
-
-            // RAPL energy registers are 32 bits wide and wrap.
-            ulong pkgDelta = (pkg - previousPkg) & 0xFFFFFFFF;
-            ulong psysDelta = (psys - previousPsys) & 0xFFFFFFFF;
-
-            previousPkg = pkg;
-            previousPsys = psys;
-            previousTicks = ticks;
-
-            if (seconds <= 0.0)
-            {
-                platform = PowerSample.Unsupported(PowerBoundary.Platform, "采样窗口为零");
-                return false;
-            }
-
-            packageWatts = (pkgDelta * energyUnitJoules) / seconds;
-            double platformWatts = (psysDelta * energyUnitJoules) / seconds;
-
-            if (psysDelta == 0)
-            {
-                // A counter that never advances means the board does not route
-                // the platform signal. That is a negative capability result, not
-                // a zero-watt reading.
-                platform = PowerSample.Unsupported(
-                    PowerBoundary.Platform, "本机未启用 Psys 平台计数器");
-                return false;
-            }
-
-            platform = PowerSample.FromValue(
-                PowerBoundary.Platform,
-                MeasurementKind.Measured,
-                platformWatts,
-                "PawnIO MSR 0x64D",
-                TimeSpan.FromSeconds(seconds));
-            return true;
+            return sampleTracker.TryAdvance(
+                pkg,
+                psys,
+                ticks,
+                Stopwatch.Frequency,
+                energyUnitJoules,
+                out platform,
+                out packageWatts);
         }
 
         /// <summary>
@@ -308,6 +265,92 @@ namespace BatteryChargeMeter
         {
             if (handle != IntPtr.Zero)
                 NativePawnIo.pawnio_close(handle);
+        }
+    }
+
+    /// <summary>
+    /// Owns the stateful RAPL counter-to-power conversion used by the live
+    /// PawnIO reader. Keeping the baseline transition here makes suspend-sized
+    /// sample gaps testable without needing the driver or waiting in real time.
+    /// </summary>
+    internal sealed class RaplSampleTracker
+    {
+        private const double MaxSampleWindowSeconds = 10.0;
+
+        private long previousTicks;
+        private ulong previousPkg;
+        private ulong previousPsys;
+        private bool hasPrevious;
+
+        public bool TryAdvance(
+            ulong pkg,
+            ulong psys,
+            long ticks,
+            long frequency,
+            double energyUnitJoules,
+            out PowerSample platform,
+            out double packageWatts)
+        {
+            packageWatts = 0.0;
+
+            if (!hasPrevious)
+            {
+                SaveBaseline(pkg, psys, ticks);
+                platform = PowerSample.Unsupported(PowerBoundary.Platform, "正在建立基准");
+                return false;
+            }
+
+            double seconds = frequency > 0
+                ? (double)(ticks - previousTicks) / frequency
+                : 0.0;
+
+            // RAPL energy registers are 32 bits wide and wrap. Save the new
+            // counters before validating the window so a resume-sized gap
+            // becomes a fresh baseline for the very next normal sample.
+            ulong pkgDelta = (pkg - previousPkg) & 0xFFFFFFFF;
+            ulong psysDelta = (psys - previousPsys) & 0xFFFFFFFF;
+            SaveBaseline(pkg, psys, ticks);
+
+            if (seconds <= 0.0)
+            {
+                platform = PowerSample.Unsupported(PowerBoundary.Platform, "采样窗口为零");
+                return false;
+            }
+            if (seconds > MaxSampleWindowSeconds)
+            {
+                platform = PowerSample.Unsupported(
+                    PowerBoundary.Platform, "采样间隔过长，正在重新建立基准");
+                return false;
+            }
+
+            packageWatts = (pkgDelta * energyUnitJoules) / seconds;
+            double platformWatts = (psysDelta * energyUnitJoules) / seconds;
+
+            if (psysDelta == 0)
+            {
+                // A counter that never advances means the board does not route
+                // the platform signal. That is a negative capability result, not
+                // a zero-watt reading.
+                platform = PowerSample.Unsupported(
+                    PowerBoundary.Platform, "本机未启用 Psys 平台计数器");
+                return false;
+            }
+
+            platform = PowerSample.FromValue(
+                PowerBoundary.Platform,
+                MeasurementKind.Measured,
+                platformWatts,
+                "PawnIO MSR 0x64D",
+                TimeSpan.FromSeconds(seconds));
+            return true;
+        }
+
+        private void SaveBaseline(ulong pkg, ulong psys, long ticks)
+        {
+            previousPkg = pkg;
+            previousPsys = psys;
+            previousTicks = ticks;
+            hasPrevious = true;
         }
     }
 

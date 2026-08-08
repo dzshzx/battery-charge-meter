@@ -18,11 +18,17 @@ namespace BatteryChargeMeter
 {
     internal sealed class BatteryReading
     {
+        public bool StatusAvailable;
+        public string StatusUnavailableReason;
+        public int ActiveBatteryCount;
         public bool PowerOnline;
         public bool Charging;
         public bool Discharging;
         public bool RateAvailable;
+        public string RateUnavailableReason;
         public double PowerWatts;
+        public bool VoltageAvailable;
+        public bool CurrentAvailable;
         public double VoltageVolts;
         public double CurrentAmps;
         public int Percentage = -1;
@@ -30,12 +36,9 @@ namespace BatteryChargeMeter
 
     internal static class BatterySensor
     {
-        private static int cachedPercentage = -1;
-        private static int percentageCountdown;
-
         public static BatteryReading Read()
         {
-            BatteryReading reading = new BatteryReading();
+            List<BatteryReading> activeReadings = new List<BatteryReading>();
 
             ManagementScope scope = new ManagementScope(@"\\.\root\WMI");
             scope.Connect();
@@ -51,6 +54,9 @@ namespace BatteryChargeMeter
                         if (HasProperty(item, "Active") && !ReadBoolean(item, "Active"))
                             continue;
 
+                        BatteryReading reading = new BatteryReading();
+                        reading.StatusAvailable = true;
+                        reading.ActiveBatteryCount = 1;
                         reading.PowerOnline = ReadBoolean(item, "PowerOnline");
                         reading.Charging = ReadBoolean(item, "Charging");
                         reading.Discharging = ReadBoolean(item, "Discharging");
@@ -61,29 +67,84 @@ namespace BatteryChargeMeter
 
                         ResolveRate(reading, chargeRate, dischargeRate);
 
-                        if (voltage != UInt32.MaxValue && voltage > 0)
-                        {
-                            reading.VoltageVolts = voltage / 1000.0;
-                            reading.CurrentAmps = Math.Abs(reading.PowerWatts) / reading.VoltageVolts;
-                        }
+                        ResolveElectricalDetails(reading, voltage);
 
-                        break;
+                        activeReadings.Add(reading);
                     }
                 }
             }
 
-            if (percentageCountdown <= 0)
+            BatteryReading combined = CombineReadings(activeReadings);
+            AssignSystemPercentage(combined, ReadSystemPercentage());
+            return combined;
+        }
+
+        internal static BatteryReading CombineReadings(IList<BatteryReading> readings)
+        {
+            if (readings == null || readings.Count == 0)
             {
-                cachedPercentage = ReadPercentage();
-                percentageCountdown = 5;
-            }
-            else
-            {
-                percentageCountdown--;
+                return new BatteryReading
+                {
+                    StatusAvailable = false,
+                    StatusUnavailableReason = "本机没有活动电池",
+                    RateUnavailableReason = "电池状态不可用"
+                };
             }
 
-            reading.Percentage = cachedPercentage;
-            return reading;
+            if (readings.Count == 1)
+            {
+                BatteryReading single = readings[0];
+                single.StatusAvailable = true;
+                single.ActiveBatteryCount = 1;
+                return single;
+            }
+
+            BatteryReading combined = new BatteryReading();
+            combined.StatusAvailable = true;
+            combined.ActiveBatteryCount = readings.Count;
+            combined.PowerOnline = readings[0].PowerOnline;
+            combined.RateAvailable = true;
+
+            foreach (BatteryReading reading in readings)
+            {
+                if (reading == null || !reading.StatusAvailable)
+                {
+                    combined.RateAvailable = false;
+                    combined.RateUnavailableReason = "至少一块电池状态不可用";
+                    continue;
+                }
+
+                if (reading.PowerOnline != combined.PowerOnline)
+                {
+                    combined.RateAvailable = false;
+                    combined.RateUnavailableReason = "多块电池报告的供电状态不一致";
+                }
+
+                if (!reading.RateAvailable)
+                {
+                    combined.RateAvailable = false;
+                    if (String.IsNullOrEmpty(combined.RateUnavailableReason))
+                    {
+                        combined.RateUnavailableReason = String.IsNullOrEmpty(reading.RateUnavailableReason)
+                            ? "至少一块电池速率不可用"
+                            : reading.RateUnavailableReason;
+                    }
+                }
+
+                combined.PowerWatts += reading.PowerWatts;
+            }
+
+            if (combined.RateAvailable)
+            {
+                combined.Charging = combined.PowerWatts > 0.0;
+                combined.Discharging = combined.PowerWatts < 0.0;
+            }
+
+            // Packs can have different terminal voltages, so a single voltage
+            // or derived current would not describe the aggregate boundary.
+            combined.VoltageAvailable = false;
+            combined.CurrentAvailable = false;
+            return combined;
         }
 
         /// <summary>
@@ -93,8 +154,8 @@ namespace BatteryChargeMeter
         /// Availability has to track the direction currently in effect. Firmware
         /// that reports one rate and not the other would otherwise pass as
         /// available and yield a silent 0 W, which every consumer reads as a
-        /// real measurement. Neither direction being active is a genuine zero,
-        /// not an absence.
+        /// real measurement. Neither direction being active is a genuine zero
+        /// only while external power is present; offline it is ambiguous.
         ///
         /// Internal rather than inline so the self test can drive the firmware
         /// combinations that no single machine can produce on demand.
@@ -103,41 +164,73 @@ namespace BatteryChargeMeter
         {
             bool chargeKnown = chargeRate != UInt32.MaxValue;
             bool dischargeKnown = dischargeRate != UInt32.MaxValue;
+            reading.RateUnavailableReason = null;
 
             if (reading.Charging)
             {
                 reading.RateAvailable = chargeKnown;
                 reading.PowerWatts = chargeKnown ? chargeRate / 1000.0 : 0.0;
+                if (!chargeKnown)
+                    reading.RateUnavailableReason = "电池充电速率不可用";
             }
             else if (reading.Discharging)
             {
                 reading.RateAvailable = dischargeKnown;
                 reading.PowerWatts = dischargeKnown ? -(dischargeRate / 1000.0) : 0.0;
+                if (!dischargeKnown)
+                    reading.RateUnavailableReason = "电池放电速率不可用";
             }
             else
             {
-                reading.RateAvailable = true;
+                reading.RateAvailable = reading.PowerOnline;
                 reading.PowerWatts = 0.0;
+                if (!reading.PowerOnline)
+                    reading.RateUnavailableReason = "离线状态下电池方向不明";
             }
         }
 
-        private static int ReadPercentage()
+        internal static void ResolveElectricalDetails(BatteryReading reading, uint voltageMillivolts)
+        {
+            reading.VoltageAvailable = false;
+            reading.CurrentAvailable = false;
+            reading.VoltageVolts = 0.0;
+            reading.CurrentAmps = 0.0;
+
+            if (voltageMillivolts == UInt32.MaxValue || voltageMillivolts == 0)
+                return;
+
+            reading.VoltageAvailable = true;
+            reading.VoltageVolts = voltageMillivolts / 1000.0;
+
+            if (!reading.RateAvailable)
+                return;
+
+            reading.CurrentAvailable = true;
+            reading.CurrentAmps = Math.Abs(reading.PowerWatts) / reading.VoltageVolts;
+        }
+
+        internal static void AssignSystemPercentage(BatteryReading reading, int percentage)
+        {
+            if (reading == null)
+                return;
+
+            reading.Percentage = reading.StatusAvailable && percentage >= 0 && percentage <= 100
+                ? percentage
+                : -1;
+        }
+
+        private static int ReadSystemPercentage()
         {
             try
             {
-                using (ManagementObjectSearcher searcher =
-                    new ManagementObjectSearcher("root\\CIMV2", "SELECT EstimatedChargeRemaining FROM Win32_Battery"))
-                {
-                    foreach (ManagementObject item in searcher.Get())
-                    {
-                        using (item)
-                        {
-                            object value = item["EstimatedChargeRemaining"];
-                            if (value != null)
-                                return Convert.ToInt32(value, CultureInfo.InvariantCulture);
-                        }
-                    }
-                }
+                // PowerStatus is backed by GetSystemPowerStatus and therefore
+                // reports the operating system's aggregate battery percentage,
+                // rather than an arbitrary first Win32_Battery instance.
+                float fraction = SystemInformation.PowerStatus.BatteryLifePercent;
+                if (Single.IsNaN(fraction) || Single.IsInfinity(fraction) || fraction < 0f || fraction > 1f)
+                    return -1;
+
+                return (int)Math.Round(fraction * 100.0, MidpointRounding.AwayFromZero);
             }
             catch
             {
@@ -381,6 +474,7 @@ namespace BatteryChargeMeter
             trayEnabled = enableTray;
             Text = "Battery Charge Meter";
             AutoScaleMode = AutoScaleMode.None;
+            AutoScroll = true;
             ClientSize = new Size(430, 500);
             FormBorderStyle = FormBorderStyle.FixedSingle;
             MaximizeBox = false;
@@ -615,26 +709,26 @@ namespace BatteryChargeMeter
                 errorLabel.Text = "";
 
                 Color accent;
-                string state;
-                if (reading.Charging)
+                string state = StateText(reading);
+                if (!reading.StatusAvailable)
+                {
+                    accent = errorColor;
+                }
+                else if (reading.Charging)
                 {
                     accent = chargingColor;
-                    state = "CHARGING";
                 }
                 else if (reading.Discharging)
                 {
                     accent = dischargeColor;
-                    state = "DISCHARGING";
                 }
                 else if (reading.PowerOnline)
                 {
                     accent = idleColor;
-                    state = "AC / IDLE";
                 }
                 else
                 {
                     accent = dischargeColor;
-                    state = "ON BATTERY";
                 }
 
                 stateLabel.Text = state;
@@ -649,14 +743,20 @@ namespace BatteryChargeMeter
                 else
                 {
                     powerLabel.Text = "N/A";
-                    errorLabel.Text = "This PC does not expose battery power rate.";
+                    errorLabel.Text = ShortMessage(
+                        !reading.StatusAvailable
+                            ? reading.StatusUnavailableReason
+                            : reading.RateUnavailableReason);
                 }
 
                 powerLabel.ForeColor = accent;
-                detailLabel.Text = reading.VoltageVolts.ToString("0.00", CultureInfo.InvariantCulture)
-                    + " V     "
-                    + reading.CurrentAmps.ToString("0.00", CultureInfo.InvariantCulture)
-                    + " A";
+                string voltageText = reading.VoltageAvailable
+                    ? reading.VoltageVolts.ToString("0.00", CultureInfo.InvariantCulture) + " V"
+                    : "--.-- V";
+                string currentText = reading.CurrentAvailable
+                    ? reading.CurrentAmps.ToString("0.00", CultureInfo.InvariantCulture) + " A"
+                    : "--.-- A";
+                detailLabel.Text = voltageText + "     " + currentText;
                 percentageLabel.Text = reading.Percentage >= 0
                     ? reading.Percentage.ToString(CultureInfo.InvariantCulture) + "%"
                     : "--%";
@@ -690,7 +790,9 @@ namespace BatteryChargeMeter
             SetTrayIcon(glyph, textColor);
 
             string mode;
-            if (reading.Charging)
+            if (!reading.StatusAvailable)
+                mode = "Battery unavailable";
+            else if (reading.Charging)
                 mode = "Charging";
             else if (reading.Discharging)
                 mode = "Discharging";
@@ -706,6 +808,19 @@ namespace BatteryChargeMeter
                 ? " | Battery " + reading.Percentage.ToString(CultureInfo.InvariantCulture) + "%"
                 : "";
             SetTrayTooltip(mode + ": " + power + percentage);
+        }
+
+        internal static string StateText(BatteryReading reading)
+        {
+            if (reading == null || !reading.StatusAvailable)
+                return "BATTERY UNAVAILABLE";
+            if (reading.Charging)
+                return "CHARGING";
+            if (reading.Discharging)
+                return "DISCHARGING";
+            if (reading.PowerOnline)
+                return "AC / IDLE";
+            return "ON BATTERY";
         }
 
         private void UpdateTrayError()
@@ -864,6 +979,13 @@ namespace BatteryChargeMeter
                 string report = PowerSelfTest.Run(out passed);
                 File.WriteAllText(args[1], report);
                 Environment.Exit(passed ? 0 : 1);
+                return;
+            }
+
+            if (args.Length == 2
+                && String.Equals(args[0], "--third-party-notices", StringComparison.OrdinalIgnoreCase))
+            {
+                ThirdPartyNotices.WriteTo(args[1]);
                 return;
             }
 

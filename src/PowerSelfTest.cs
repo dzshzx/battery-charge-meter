@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Drawing;
 using System.Globalization;
 using System.Text;
 
@@ -22,7 +24,12 @@ namespace BatteryChargeMeter
             int failures = 0;
 
             failures += RateCases(log);
+            failures += BatteryAggregationCases(log);
             failures += WholeSystemCases(log);
+            failures += CounterCases(log);
+            failures += ValidationCases(log);
+            failures += EmiMetadataCases(log);
+            failures += LayoutCases(log);
 
             log.AppendLine();
             passed = failures == 0;
@@ -41,8 +48,14 @@ namespace BatteryChargeMeter
             BatteryReading reading = new BatteryReading();
             reading.Charging = true;
             BatterySensor.ResolveRate(reading, 43802, 0);
+            BatterySensor.ResolveElectricalDetails(reading, 12000);
             failures += Check(log, "charging, charge rate known",
-                reading.RateAvailable && Near(reading.PowerWatts, 43.802));
+                reading.RateAvailable
+                    && reading.VoltageAvailable
+                    && reading.CurrentAvailable
+                    && Near(reading.PowerWatts, 43.802)
+                    && Near(reading.VoltageVolts, 12.0)
+                    && Near(reading.CurrentAmps, 43.802 / 12.0));
 
             // Charging while only the opposite direction reports a rate. The
             // rate for the direction in effect is unknown, so nothing may be
@@ -67,11 +80,55 @@ namespace BatteryChargeMeter
             failures += Check(log, "discharging, only charge rate known",
                 !reading.RateAvailable);
 
-            // Neither direction active is a real zero, not an absence.
+            // Neither direction active while external power is present is a
+            // real zero, not an absence.
+            reading = new BatteryReading();
+            reading.PowerOnline = true;
+            BatterySensor.ResolveRate(reading, UInt32.MaxValue, UInt32.MaxValue);
+            failures += Check(log, "online idle battery reports a known zero",
+                reading.RateAvailable && Near(reading.PowerWatts, 0.0));
+
+            // With no external power and neither direction flag, firmware has
+            // not identified what supplies the running machine. Calling that a
+            // measured zero would fabricate a whole-system reading.
             reading = new BatteryReading();
             BatterySensor.ResolveRate(reading, UInt32.MaxValue, UInt32.MaxValue);
-            failures += Check(log, "idle battery reports a known zero",
-                reading.RateAvailable && Near(reading.PowerWatts, 0.0));
+            BatterySensor.ResolveElectricalDetails(reading, 12000);
+            failures += Check(log, "offline battery without a direction is unavailable",
+                !reading.RateAvailable
+                    && reading.VoltageAvailable
+                    && !reading.CurrentAvailable
+                    && Near(reading.VoltageVolts, 12.0));
+
+            return failures;
+        }
+
+        private static int BatteryAggregationCases(StringBuilder log)
+        {
+            int failures = 0;
+            BatteryReading first = Battery(false, false, true, -10.0);
+            BatteryReading second = Battery(false, false, true, -15.0);
+            first.Percentage = 12;
+            second.Percentage = 88;
+
+            BatteryReading combined = BatterySensor.CombineReadings(
+                new BatteryReading[] { first, second });
+            BatterySensor.AssignSystemPercentage(combined, 64);
+
+            failures += Check(log, "two active batteries aggregate terminal power",
+                combined.StatusAvailable
+                    && combined.ActiveBatteryCount == 2
+                    && combined.RateAvailable
+                    && combined.Discharging
+                    && combined.Percentage == 64
+                    && Near(combined.PowerWatts, -25.0));
+
+            BatteryReading unavailable = BatterySensor.CombineReadings(
+                new BatteryReading[0]);
+            BatterySensor.AssignSystemPercentage(unavailable, 64);
+            failures += Check(log, "missing active battery is not labelled on battery",
+                MainForm.StateText(unavailable) == "BATTERY UNAVAILABLE"
+                    && unavailable.Percentage == -1);
 
             return failures;
         }
@@ -113,6 +170,11 @@ namespace BatteryChargeMeter
             failures += Check(log, "on AC while battery supplements subtracts",
                 result.Available && Near(result.Watts, 19.0));
 
+            result = PowerSources.DeriveWholeSystem(platform, Battery(true, false, true, -30.0));
+            failures += Check(log, "negative estimated input is rejected",
+                !result.Available
+                    && result.UnavailableReason == "估算结果为负，数据边界或采样窗口不一致");
+
             // A full battery on external power contributes nothing.
             result = PowerSources.DeriveWholeSystem(platform, Battery(true, false, true, 0.0));
             failures += Check(log, "on AC with an idle battery equals platform",
@@ -132,6 +194,119 @@ namespace BatteryChargeMeter
             result = PowerSources.DeriveWholeSystem(platform, null);
             failures += Check(log, "missing battery reading is unsupported", !result.Available);
 
+            BatteryReading noBattery = BatterySensor.CombineReadings(
+                new BatteryReading[0]);
+            result = PowerSources.DeriveWholeSystem(platform, noBattery);
+            failures += Check(log, "no active battery preserves its status reason",
+                !result.Available
+                    && result.UnavailableReason == noBattery.StatusUnavailableReason);
+
+            return failures;
+        }
+
+        private static int LayoutCases(StringBuilder log)
+        {
+            Size viewport = DpiLayout.ConstrainClientSize(
+                new Size(1290, 1500),
+                new Size(1920, 1040),
+                new Size(16, 39));
+
+            return Check(log, "300 percent layout stays reachable on a 1080p display",
+                viewport.Width == 1290 && viewport.Height == 985);
+        }
+
+        private static int EmiMetadataCases(StringBuilder log)
+        {
+            byte[] channelName = Encoding.Unicode.GetBytes("CPU_PKG\0");
+            byte[] metadata = new byte[72 + channelName.Length];
+            Buffer.BlockCopy(
+                BitConverter.GetBytes((ushort)channelName.Length), 0, metadata, 70, 2);
+            Buffer.BlockCopy(channelName, 0, metadata, 72, channelName.Length);
+
+            IList<string> channels = EmiSensor.ReadSupportedChannels(
+                metadata,
+                delegate(byte[] ignored) { return (ushort)1; },
+                delegate(byte[] bytes, ushort version)
+                {
+                    return NativeEmi.ParseChannelNames(version, bytes);
+                });
+            int failures = Check(log, "EMI V1 version and package metadata are accepted",
+                channels.Count == 1 && channels[0] == "CPU_PKG");
+
+            List<string> selectedChannels;
+            List<string> discoveredChannels;
+            List<string> errors;
+            string selectedPath = EmiSensor.SelectPackageDevice(
+                new string[] { "bad-device", "good-device" },
+                delegate(string path)
+                {
+                    if (path == "bad-device")
+                        throw new InvalidOperationException("broken metadata");
+                    return EmiSensor.ReadSupportedChannels(
+                        metadata,
+                        delegate(byte[] ignored) { return (ushort)1; },
+                        delegate(byte[] bytes, ushort version)
+                        {
+                            return NativeEmi.ParseChannelNames(version, bytes);
+                        });
+                },
+                out selectedChannels,
+                out discoveredChannels,
+                out errors);
+
+            failures += Check(log, "bad EMI device does not hide a later package meter",
+                selectedPath == "good-device"
+                    && selectedChannels.Count == 1
+                    && errors.Count == 1);
+            return failures;
+        }
+
+        private static int ValidationCases(StringBuilder log)
+        {
+            PowerSample platform = PowerSample.FromValue(
+                PowerBoundary.Platform,
+                MeasurementKind.Measured,
+                24.0,
+                "PawnIO MSR 0x64D",
+                TimeSpan.FromSeconds(1));
+            PowerSample missingEmi = PowerSample.Unsupported(
+                PowerBoundary.CpuPackage, "本机没有 EMI 电表设备");
+
+            PowerSample validated = PowerSources.ValidatePlatform(
+                platform, missingEmi, 12.0);
+
+            return Check(log, "Psys remains available without EMI cross-check",
+                validated.Available
+                    && Near(validated.Watts, 24.0)
+                    && validated.Source.IndexOf("未交叉验证", StringComparison.Ordinal) >= 0);
+        }
+
+        private static int CounterCases(StringBuilder log)
+        {
+            double watts;
+            TimeSpan window;
+            bool accepted = EmiSensor.TryCalculatePower(
+                2000, 200, 1000, 300, out watts, out window);
+
+            int failures = Check(
+                log, "EMI counter regression requires a new baseline", !accepted);
+
+            RaplSampleTracker tracker = new RaplSampleTracker();
+            PowerSample platform;
+            double packageWatts;
+            bool first = tracker.TryAdvance(
+                1000, 2000, 0, 1000, 0.001, out platform, out packageWatts);
+            bool longWindow = tracker.TryAdvance(
+                2000, 4000, 60000, 1000, 0.001, out platform, out packageWatts);
+            bool resumed = tracker.TryAdvance(
+                2100, 4200, 61000, 1000, 0.001, out platform, out packageWatts);
+            failures += Check(log, "long RAPL window re-baselines the production tracker",
+                !first
+                    && !longWindow
+                    && resumed
+                    && platform.Available
+                    && Near(platform.Watts, 0.2)
+                    && Near(packageWatts, 0.1));
             return failures;
         }
 
@@ -139,6 +314,8 @@ namespace BatteryChargeMeter
             bool online, bool charging, bool rateAvailable, double watts)
         {
             BatteryReading reading = new BatteryReading();
+            reading.StatusAvailable = true;
+            reading.ActiveBatteryCount = 1;
             reading.PowerOnline = online;
             reading.Charging = charging;
             reading.Discharging = watts < 0.0;

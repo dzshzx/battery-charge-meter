@@ -73,17 +73,18 @@ BatteryChargeMeter.exe --power-probe report.txt 10
 程序未使用商业代码签名证书。Windows 首次运行若显示 SmartScreen 提示，
 请先核对仓库来源，并使用 Release 附带的 `.sha256` 文件校验 EXE，再决定是否运行。
 
-启动时会弹出 UAC 提权提示。平台功率所依赖的驱动只允许 SYSTEM 与管理员访问，
-不提权就读不到该计数器，因此程序在启动时一次性请求管理员权限，而不是运行到
-一半再降级。电池端净功率与 CPU 包功率不需要提权。
+默认启动不会弹出 UAC 提权提示，电池端净功率与 CPU 包功率可直接使用。平台功率
+所依赖的 PawnIO 设备只允许 SYSTEM 与管理员访问；需要这两个可选指标时，请右键
+EXE 选择“以管理员身份运行”。普通启动时它们显示 `N/A` 并说明需要管理员权限，
+不会影响其余指标。
 
-> 因为程序要求管理员权限，用注册表 `Run` 键做开机自启不会生效；如需自启，
-> 请改用任务计划程序并勾选“使用最高权限运行”。
+注册表 `Run` 键可以继续用于普通模式自启；如果自启后也要读取平台功率，请改用
+任务计划程序并勾选“使用最高权限运行”。
 
 ## 平台功率（可选）
 
 电池端净功率与 CPU 包功率开箱即用，不需要任何额外组件。**平台功率**与
-**估算整机输入功率**额外需要 [PawnIO](https://pawnio.eu/) 驱动——它是免费、
+**估算整机输入功率**额外需要 [PawnIO](https://pawnio.eu/) 驱动并以管理员身份运行——它是免费、
 开源、经数字签名的通用内核驱动，请自行从官网下载安装包安装；本程序不会代为
 安装驱动，也不会在未经你同意的情况下改动系统。
 
@@ -91,12 +92,16 @@ BatteryChargeMeter.exe --power-probe report.txt 10
 文件。若要换用自己编译或更新版本的模块，把同名文件放在 EXE 同目录即可覆盖
 内嵌副本（详见 `third_party/NOTICE.md`）。
 
+可用 `BatteryChargeMeter.exe --third-party-notices notices.txt` 从 EXE 提取第三方
+通知与 LGPL-2.1 全文。每个 Release 还会在 EXE 旁提供相同通知和与内嵌模块精确
+对应的 `PawnIO.Modules-0.2.10-source.zip` 源码包。
+
 未安装驱动时，这两个指标显示不可用并说明原因，其余功能不受影响。
 
 能否读到平台功率还取决于主板是否把 Psys 信号布线到处理器，这是整机厂的硬件
 设计选择，逐机型不同。程序在运行时探测实际计数器是否推进来判定，不按机型
-白名单假定；同时用 EMI 独立读到的 CPU 包功率校验能量单位换算，校验不通过就
-不显示平台功率，而不是显示一个缩放错误的数值。
+白名单假定；有 EMI CPU 包功率时会用它交叉校验能量单位，校验不通过就不显示
+平台功率。没有 EMI 时仍显示 Psys，但来源提示会明确标记“未交叉验证”。
 
 ## 配置文件
 
@@ -132,8 +137,8 @@ BatteryChargeMeter.exe --power-probe report.txt 10
 - 推送到 `master` 或向 `master` 提交 Pull Request 时，CI 会在 Windows
   runner 上执行一次完整构建。
 - 推送符合 `vX.Y.Z` 格式的 tag 时，Release 工作流会校验 tag 与 manifest
-  版本一致，重新构建程序，生成可直接运行的 EXE 和 SHA-256 校验文件，并创建
-  GitHub Release。
+  版本一致，重新构建程序，生成可直接运行的 EXE、SHA-256 校验文件、第三方通知
+  与对应源码包，并创建 GitHub Release。
 
 发布新版本前先更新 `src/BatteryChargeMeter.manifest` 中的四段版本号。例如，
 manifest 版本 `1.3.0.0` 对应 tag `v1.3.0`：

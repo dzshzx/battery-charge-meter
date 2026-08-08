@@ -22,6 +22,7 @@ namespace BatteryChargeMeter
         private readonly List<FontBaseline> fontBaselines = new List<FontBaseline>();
         private Dictionary<Control, Font> appliedFonts = new Dictionary<Control, Font>();
         private bool disposed;
+        private const int WorkingAreaMargin = 16;
 
         public DpiLayout(Form form, Size designClientSize)
         {
@@ -51,9 +52,17 @@ namespace BatteryChargeMeter
             form.SuspendLayout();
             try
             {
-                form.ClientSize = new Size(
+                Size contentSize = new Size(
                     ScaleValue(designClientSize.Width, scale),
                     ScaleValue(designClientSize.Height, scale));
+                Size nonClientSize = new Size(
+                    Math.Max(0, form.Width - form.ClientSize.Width),
+                    Math.Max(0, form.Height - form.ClientSize.Height));
+                Size workingArea = Screen.FromControl(form).WorkingArea.Size;
+
+                form.AutoScrollMinSize = contentSize;
+                form.ClientSize = ConstrainClientSize(
+                    contentSize, workingArea, nonClientSize);
 
                 foreach (FontBaseline baseline in fontBaselines)
                     baseline.Control.Font = nextFonts[baseline.Control];
@@ -104,6 +113,18 @@ namespace BatteryChargeMeter
         internal static int ScaleValue(int value, float scale)
         {
             return (int)Math.Round(value * scale, MidpointRounding.AwayFromZero);
+        }
+
+        internal static Size ConstrainClientSize(
+            Size contentSize, Size workingArea, Size nonClientSize)
+        {
+            int availableWidth = Math.Max(
+                1, workingArea.Width - nonClientSize.Width - WorkingAreaMargin);
+            int availableHeight = Math.Max(
+                1, workingArea.Height - nonClientSize.Height - WorkingAreaMargin);
+            return new Size(
+                Math.Min(contentSize.Width, availableWidth),
+                Math.Min(contentSize.Height, availableHeight));
         }
 
         private void CaptureControls(Control.ControlCollection controls)

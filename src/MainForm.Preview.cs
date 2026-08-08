@@ -111,18 +111,22 @@ namespace BatteryChargeMeter
                 path + ".txt",
                 String.Format(
                     CultureInfo.InvariantCulture,
-                    "{0}; Form={1}x{2}; Client={3}x{4}; WindowRect={5}x{6}; "
-                        + "FormFontPixels={7:0.###}; PowerFontPixels={8:0.###}; "
-                        + "WindowPositionApplied={9}; WindowPositionMatched={10}",
+                    "{0}; Form={1}x{2}; Client={3}x{4}; Content={5}x{6}; "
+                        + "WindowRect={7}x{8}; FormFontPixels={9:0.###}; "
+                        + "PowerFontPixels={10:0.###}; AutoScroll={11}; "
+                        + "WindowPositionApplied={12}; WindowPositionMatched={13}",
                     dpiMetadata,
                     Width,
                     Height,
                     ClientSize.Width,
                     ClientSize.Height,
+                    AutoScrollMinSize.Width,
+                    AutoScrollMinSize.Height,
                     captureWidth,
                     captureHeight,
                     Font.Size,
                     powerLabel.Font.Size,
+                    AutoScroll,
                     lastDpiWindowPositionApplied,
                     positionMatched));
         }
