@@ -33,6 +33,10 @@
 - Run `pwsh -NoProfile -File .\scripts\test.ps1` from a Windows-local checkout.
   When starting in WSL, copy the checkout to a Windows-local temporary path;
   the .NET Framework compiler rejects WSL UNC paths.
+- Put a candidate manifest version on `master`, then wait for CI on that exact
+  SHA to pass before creating its matching annotated release tag. Remote tags
+  are immutable; a tagged failure is fixed in the next patch, never by moving
+  or reusing the tag.
 - A release tag `vX.Y.Z` must match manifest version `X.Y.Z.0`.
 - The Release workflow must publish both packaging formats, both SHA-256 files,
   the third-party notice, and the pinned PawnIO corresponding-source bundle.

@@ -142,16 +142,22 @@ EXE 选择“以管理员身份运行”。普通启动时它们显示 `N/A` 并
 - 推送到 `master` 或向 `master` 提交 Pull Request 时，CI 会在 Windows
   runner 上执行一次完整构建。
 - 推送符合 `vX.Y.Z` 格式的 tag 时，Release 工作流会校验 tag 与 manifest
-  版本一致，重新构建程序，同时生成便携 EXE、当前用户安装包及各自的 SHA-256
-  校验文件，并随第三方通知和对应源码包创建 GitHub Release。
+  版本一致、tag 为带注解 tag 且位于 `master`，重新构建程序，同时生成便携 EXE、
+  当前用户安装包及各自的 SHA-256 校验文件，并随第三方通知和对应源码包创建
+  GitHub Release。
 
-发布新版本前先更新 `src/BatteryChargeMeter.manifest` 中的四段版本号。例如，
-manifest 版本 `1.3.0.0` 对应 tag `v1.3.0`：
+发布新版本时，先在候选提交中更新 `src/BatteryChargeMeter.manifest` 的四段版本号并
+推送 `master`，等待该同一 SHA 的 Windows CI 全绿，再确认远端 tag 未占用并创建
+匹配的带注解 tag。例如 manifest `1.3.0.0` 对应 `v1.3.0`：
 
 ```powershell
+git push origin master
+# 等待 master 上这个 SHA 的 CI 成功
 git tag -a v1.3.0 -m "Release v1.3.0"
 git push origin v1.3.0
 ```
+
+远端发布 tag 不移动、不复用；若 tag 后才发现失败，修复后发布下一个 patch。
 
 发布产物只存在于 GitHub Release，不直接提交到仓库。
 

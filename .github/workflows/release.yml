@@ -19,8 +19,10 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
 
-      - name: Validate version
+      - name: Validate immutable release identity
         id: version
         shell: pwsh
         run: |
@@ -36,6 +38,26 @@ jobs:
 
           if ($manifestVersion -ne $expectedManifestVersion) {
               throw "Tag $tag requires manifest version $expectedManifestVersion; found $manifestVersion."
+          }
+
+          $tagRef = "refs/tags/$tag"
+          $tagObjectType = (git cat-file -t $tagRef).Trim()
+          if ($LASTEXITCODE -ne 0 -or $tagObjectType -ne 'tag') {
+              throw "Release tag must be annotated: $tag"
+          }
+
+          $tagCommit = (git rev-list -n1 $tagRef).Trim()
+          if ($LASTEXITCODE -ne 0 -or $tagCommit -ne $env:GITHUB_SHA) {
+              throw "Release tag $tag does not resolve to workflow SHA $env:GITHUB_SHA."
+          }
+
+          git fetch --no-tags origin +master:refs/remotes/origin/master
+          if ($LASTEXITCODE -ne 0) {
+              throw 'Could not fetch origin/master for release ancestry validation.'
+          }
+          git merge-base --is-ancestor $env:GITHUB_SHA origin/master
+          if ($LASTEXITCODE -ne 0) {
+              throw "Release SHA $env:GITHUB_SHA is not on origin/master."
           }
 
           "tag=$tag" >> $env:GITHUB_OUTPUT
