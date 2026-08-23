@@ -3,6 +3,8 @@
 一个轻量的 Windows 笔记本功率监视器。它直接读取 Windows/ACPI 电池传感器与
 处理器能量计数器，每秒更新各口径功率；Release 同时提供免安装便携版与安装包。
 
+> 给贡献者与 AI agent：项目约束、不变量与验证/发布流程在 `AGENTS.md`（Claude Code 不会自动加载它，动手前先读）；功率术语、供电状态与测量类型在 `CONTEXT.md`。
+
 ## 功能
 
 - 实时显示电池端净功率、电池端电压、估算电流和电量
@@ -64,6 +66,17 @@
 ```text
 BatteryChargeMeter.exe --power-probe report.txt 10
 ```
+
+全部命令行开关（不带参数即启动窗口）：
+
+| 开关 | 作用 |
+| --- | --- |
+| `--power-probe <report.txt> [秒数=5]` | 逐源探测并写出各口径的采样报告 |
+| `--self-test <report.txt>` | 跑功率推导自检（供电状态 × 固件速率组合），通过退出码 0、失败 1；CI 与 `scripts/test.ps1` 依赖它 |
+| `--third-party-notices <out.txt>` | 导出内嵌的第三方通知全文 |
+| `--screenshot <out.png>` | 渲染主窗口截图 |
+| `--dpi-preview <out.png> <目标 DPI> [返回 DPI]` | 渲染跨 DPI 切换预览（`scripts/test.ps1` 使用） |
+| `--tray-preview <out.png> <瓦数> <charging\|discharging>` | 渲染托盘文字图标预览（`scripts/test.ps1` 使用） |
 
 ## 运行
 
@@ -171,7 +184,12 @@ git push origin v1.3.0
 ├── scripts/     # 构建、测试与发布打包脚本
 ├── src/         # C# 源码与 DPI manifest
 ├── third_party/ # 内嵌模块、许可证、通知与对应源码
+├── LICENSE      # 本项目代码的 MIT 许可证（第三方组件见 third_party/）
 ├── AGENTS.md    # 修改与验证时必须保持的项目约束
 ├── CONTEXT.md   # 功率口径的统一术语
 └── dist/        # 本地构建输出（不纳入版本控制）
 ```
+
+## 许可证
+
+本项目代码以 MIT 许可证发布（见 `LICENSE`）。内嵌的 PawnIO `IntelMSR.bin` 模块为 LGPL-2.1：其通知、许可证文本与对应源码包随 Release 资产和 `third_party/` 一并提供，见 `third_party/NOTICE.md`。
