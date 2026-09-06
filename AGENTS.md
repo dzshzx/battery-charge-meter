@@ -1,58 +1,22 @@
 # Battery Charge Meter agent notes
 
-## Project shape
+Windows WinForms monitor targeting .NET Framework 4.7. Power terminology and
+measurement boundaries are defined in `CONTEXT.md`; packaging and release
+commands are in `README.md`, and PawnIO obligations in `third_party/NOTICE.md`.
 
-- This is a Windows WinForms monitor targeting .NET Framework 4.7.
-- Portable EXE and per-user installer are equal release options. Do not turn
-  "single-file" back into a hard product requirement. Why: the embedded
-  `IntelMSR.bin` must stay replaceable as a sidecar and the LGPL terms require
-  shipping the notice, licence and corresponding source next to the binary;
-  a "single file only" rule would forbid both (reversed in a0c1528 after
-  faefb17 had argued for single-file).
-
-## Read before changing
-
-- Read `README.md` for user-visible behavior, packaging, and release flow.
-- Read `CONTEXT.md` before changing power names, boundaries, formulas, or UI
-  labels.
-- Read `third_party/NOTICE.md` before changing PawnIO integration, the embedded
-  IntelMSR module, or release assets.
-
-## Non-negotiable behavior
-
-- Battery terminal power is signed: charging is positive and discharge is
-  negative. On external power the estimate is Platform Power plus that signed
-  value; never clamp battery supplementation to zero.
-- On battery, System Load Power is measured as the magnitude of battery
-  discharge. On external power, System Input Power remains an estimate because
-  conversion losses are not measured.
-- The application runs `asInvoker`. PawnIO/Psys is optional, requires a
-  user-installed official driver and an elevated launch, and must never be
-  installed silently by this application. Why: every other reading is
-  user-level; demanding elevation at launch (3078130) made the common case
-  pay for an optional feature and blurred who installed the driver, so
-  527766f reverted to `asInvoker` plus an explicit elevated relaunch only
-  for Psys.
-- Preserve the replaceable `IntelMSR.bin` sidecar path and the release notice,
-  licence, and exact corresponding-source bundle required by its LGPL terms.
-
-## Verification and release
-
-- Run `pwsh -NoProfile -File .\scripts\test.ps1` from a Windows-local checkout.
-  When starting in WSL, copy the checkout to a Windows-local temporary path;
-  the .NET Framework compiler rejects WSL UNC paths. On a machine with Inno
-  Setup (`ISCC.exe`) present, `test.ps1` builds the installer and performs a
-  real silent per-user install and uninstall to verify it; without ISCC it
-  runs a fake-ISCC branch and only checks packaging inputs.
-- Branch flow: work on a task branch and open a PR (PRs #1/#2 set the
-  precedent); merging to `master` does not publish anything by itself — only
-  a release tag does.
-- Put a candidate manifest version on `master`, then wait for CI on that exact
-  SHA to pass before creating its matching annotated release tag. Remote tags
-  are immutable; a tagged failure is fixed in the next patch, never by moving
-  or reusing the tag.
-- A release tag `vX.Y.Z` must match manifest version `X.Y.Z.0`.
-- The Release workflow must publish both packaging formats, both SHA-256 files,
-  the third-party notice, and the pinned PawnIO corresponding-source bundle.
-- `dist/` is generated and ignored; release binaries belong in GitHub Releases,
-  not in the repository.
+- Battery terminal power is signed: charging positive, discharge negative.
+  On external power, estimated System Input Power is Platform Power plus this
+  signed value, including battery supplementation. On battery, System Load
+  Power is the magnitude of discharge. Conversion losses are not measured.
+- The app runs `asInvoker`. PawnIO/Psys is optional, requires a user-installed
+  official driver and elevated launch; the app must not silently install it.
+- Portable EXE and per-user installer are equal release options. Preserve the
+  replaceable `IntelMSR.bin` sidecar, LGPL notice/licence and exact corresponding
+  source bundle; release assets include both formats and SHA-256 files.
+- Verification entry: `pwsh -NoProfile -File .\scripts\test.ps1` from a
+  Windows-local checkout (.NET Framework rejects WSL UNC paths). With ISCC it
+  tests a real per-user install/uninstall; otherwise only packaging inputs.
+- Changes use a task branch and PR. A master merge does not publish: an
+  annotated `vX.Y.Z` release tag requires manifest `X.Y.Z.0` and passing CI at
+  that exact SHA. Published tags are immutable; fixes use a new patch version.
+- `dist/` is generated; binaries belong in GitHub Releases.

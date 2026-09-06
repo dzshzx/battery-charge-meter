@@ -3,7 +3,7 @@
 一个轻量的 Windows 笔记本功率监视器。它直接读取 Windows/ACPI 电池传感器与
 处理器能量计数器，每秒更新各口径功率；Release 同时提供免安装便携版与安装包。
 
-> 给贡献者与 AI agent：项目约束、不变量与验证/发布流程在 `AGENTS.md`（Claude Code 不会自动加载它，动手前先读）；功率术语、供电状态与测量类型在 `CONTEXT.md`。
+> 功率术语、供电状态与测量类型在 `CONTEXT.md`；本页提供产品行为与发布说明，Agent 入口为 `AGENTS.md`。
 
 ## 功能
 
