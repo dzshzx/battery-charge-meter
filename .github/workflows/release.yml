@@ -22,6 +22,11 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12"
+
       - name: Validate immutable release identity
         id: version
         shell: pwsh
@@ -38,6 +43,14 @@ jobs:
 
           if ($manifestVersion -ne $expectedManifestVersion) {
               throw "Tag $tag requires manifest version $expectedManifestVersion; found $manifestVersion."
+          }
+
+          & python scripts/version_plan.py verify `
+            --repository dzshzx/battery-charge-meter `
+            --target "v=$version" `
+            --tag-ref "refs/tags/$tag"
+          if ($LASTEXITCODE -ne 0) {
+              throw "Release tag $tag failed version authorization validation."
           }
 
           $tagRef = "refs/tags/$tag"

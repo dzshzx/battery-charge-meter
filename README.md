@@ -159,16 +159,40 @@ EXE 选择“以管理员身份运行”。普通启动时它们显示 `N/A` 并
   当前用户安装包及各自的 SHA-256 校验文件，并随第三方通知和对应源码包创建
   GitHub Release。
 
-发布新版本时，先在候选提交中更新 `src/BatteryChargeMeter.manifest` 的四段版本号并
-推送 `master`，等待该同一 SHA 的 Windows CI 全绿，再确认远端 tag 未占用并创建
-匹配的带注解 tag。例如 manifest `1.3.0.0` 对应 `v1.3.0`：
+发布新版本时，先从远端 tag 历史生成完整的只读版本计划，再修改
+`src/BatteryChargeMeter.manifest` 的四段版本号：
 
 ```powershell
-git push origin master
+python scripts/version_plan.py plan `
+  --repository dzshzx/battery-charge-meter `
+  --target v=X.Y.Z
+```
+
+版本精确递增一个 patch 可沿用已有发布授权；minor、major 或跳号 patch 必须暂停，等用户
+明确确认输出的完整“基线到目标”计划。基线未知和降级会直接拒绝。候选通过任务分支和 PR 合入 `master`，
+等待该同一 SHA 的 Windows CI 全绿，再确认远端 tag 未占用并创建匹配的带注解 tag。
+例如 manifest `1.3.0.0` 对应 `v1.3.0`。精确递增 patch 使用：
+
+```powershell
 # 等待 master 上这个 SHA 的 CI 成功
 git tag -a v1.3.0 -m "Release v1.3.0"
+```
+
+已经明确确认的 minor、major 或跳号 patch 计划改用带摘要的 tag 命令：
+
+```powershell
+git tag -a v1.3.0 -m "Release v1.3.0" `
+  -m "Version-Approval: sha256:<version_plan.py 输出的摘要>"
+```
+
+以上 tag 命令二选一，再推送创建好的 annotated tag：
+
+```powershell
 git push origin v1.3.0
 ```
+
+Release 会排除本次 tag 并从远端记录重建计划；基线或目标变化时，在创建 Release 前拒绝。
+摘要只证明计划一致，不构成独立的身份审批。
 
 远端发布 tag 不移动、不复用；若 tag 后才发现失败，修复后发布下一个 patch。
 
