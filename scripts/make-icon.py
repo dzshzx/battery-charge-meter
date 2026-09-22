@@ -2,10 +2,18 @@
 """Generate src/BatteryChargeMeter.ico — solid Fluent squircle + white battery-bolt.
 
 Renders each icon size with size-adaptive stroke widths (supersampled 8x),
-then packs a PNG-compressed multi-size ICO by hand.
+then packs a PNG-compressed multi-size ICO by hand. Hand-packing is
+deliberate: Pillow's ICO writer can only resample one source image, while
+this icon needs per-size artwork (heavier strokes, filled bolt below 32px);
+icoutils would add a binary dependency for ~15 lines of struct.pack.
+
+Requires Pillow >= 8.2 (rounded_rectangle). Paths resolve from the repo
+root regardless of the caller's working directory.
 """
-import io, struct
+import io, os, struct, tempfile
 from PIL import Image, ImageDraw
+
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 EMERALD = (5, 150, 105, 255)
 WHITE = (255, 255, 255, 255)
@@ -79,7 +87,7 @@ def pack_ico(entries):
 def main():
     images = {size: render(size) for size in SIZES}
     ico = pack_ico([(size, png_bytes(img)) for size, img in images.items()])
-    out = "src/BatteryChargeMeter.ico"
+    out = os.path.join(REPO_ROOT, "src", "BatteryChargeMeter.ico")
     with open(out, "wb") as fh:
         fh.write(ico)
     print(f"wrote {out} ({len(ico)} bytes, sizes {SIZES})")
@@ -93,8 +101,9 @@ def main():
     for size in SIZES:
         sheet.paste(images[size], (x, pad + (256 - size) // 2), images[size])
         x += size + pad
-    sheet.save("/tmp/bcm-icon-sheet.png")
-    print("wrote /tmp/bcm-icon-sheet.png")
+    sheet_path = os.path.join(tempfile.gettempdir(), "bcm-icon-sheet.png")
+    sheet.save(sheet_path)
+    print(f"wrote {sheet_path}")
 
 
 if __name__ == "__main__":

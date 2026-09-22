@@ -23,7 +23,7 @@ $expectedModuleHash = 'd6ed85d65ab17a22f813ef98207d6d537155ee2ded5976a21cb48413c
 
 foreach ($resourcePath in @($modulePath, $noticePath, $licensePath, $iconPath)) {
     if (-not (Test-Path -LiteralPath $resourcePath)) {
-        throw "Missing embedded resource: $resourcePath"
+        throw "Missing build input: $resourcePath"
     }
 }
 

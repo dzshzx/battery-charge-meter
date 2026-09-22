@@ -43,7 +43,7 @@ namespace BatteryChargeMeter
 
             Graphics g = e.Graphics;
             g.SmoothingMode = SmoothingMode.AntiAlias;
-            float uiScale = Math.Max(1f, Width / 390f);
+            float uiScale = Math.Max(1f, Width / 384f);
 
             double min = 0.0;
             double max = 0.0;
@@ -275,7 +275,7 @@ namespace BatteryChargeMeter
             powerLabel = NewLabel("--.-- W", 24, 40, 384, 54, 33f, FontStyle.Bold);
             powerLabel.ForeColor = UiTheme.Charging;
 
-            detailLabel = NewLabel("电池端 -- V    电池电流 ≈ -- A", 26, 100, 380, 16, 9f, FontStyle.Regular);
+            detailLabel = NewLabel("电池端 -- V    电池电流 ≈ -- A", 24, 100, 384, 16, 9f, FontStyle.Regular);
             detailLabel.ForeColor = UiTheme.Muted;
 
             chart = new SparklinePanel();
@@ -395,7 +395,7 @@ namespace BatteryChargeMeter
 
             trayIcon = new NotifyIcon();
             trayIcon.Text = "Net battery terminal power: reading sensor...";
-            trayIcon.Icon = Icon ?? SystemIcons.Application;
+            trayIcon.Icon = Icon;
             trayIcon.ContextMenuStrip = trayMenu;
             trayIcon.Visible = false;
             trayIcon.DoubleClick += delegate { RestoreFromTray(); };
@@ -467,6 +467,7 @@ namespace BatteryChargeMeter
                 dpiLayout.Apply(newDpi);
                 chart.Invalidate();
                 batteryBar.Invalidate();
+                modeSegments.Invalidate();
                 message.Result = IntPtr.Zero;
                 return;
             }

@@ -80,7 +80,7 @@ namespace BatteryChargeMeter
                     if (enable)
                     {
                         if (!Startup.IsElevated())
-                            throw new InvalidOperationException("请先点击“重新以管理员身份启动”，再勾选开机自启。");
+                            throw new InvalidOperationException("请先点击下方“以管理员身份重新启动”，再勾选开机自启。");
                         AutostartState state = manager.Read();
                         bool replace = state.Exists && !state.ThisCopy;
                         if (replace && MessageBox.Show(this,

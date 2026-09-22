@@ -60,8 +60,10 @@ namespace BatteryChargeMeter
             using (SolidBrush trackBrush = new SolidBrush(UiTheme.Chip))
                 g.FillPath(trackBrush, track);
 
-            Rectangle segment = new Rectangle(
-                3 + selectedIndex * (Width / 2), 3, Width / 2 - 5, Height - 6);
+            int pad = 3;
+            int pillWidth = Width / 2 - 2 * pad;
+            int pillX = selectedIndex == 0 ? pad : Width - pad - pillWidth;
+            Rectangle segment = new Rectangle(pillX, pad, pillWidth, Height - 6);
             using (GraphicsPath pill = WidgetPath.Rounded(segment, (Height - 6) / 2))
             using (SolidBrush pillBrush = new SolidBrush(UiTheme.Surface))
             using (Pen pillBorder = new Pen(UiTheme.FooterRule))

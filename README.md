@@ -189,6 +189,8 @@ EXE manifest 继续使用 `asInvoker`，由界面启动流程主动请求提权�
 ```
 
 脚本使用 Windows 自带的 .NET Framework C# 编译器，将应用 EXE 写入 `dist/`。
+应用图标为 `src/BatteryChargeMeter.ico`，由 `python scripts/make-icon.py`
+生成（Pillow ≥ 8.2）；修改图形后重跑该脚本并连同 ICO 一起提交。
 `dist/` 是本地构建目录，不纳入版本控制。
 
 ## 发布
