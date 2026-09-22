@@ -310,6 +310,11 @@ try {
         (Join-Path $env:ProgramFiles 'Inno Setup 6\ISCC.exe')
     ) | Where-Object { $_ -and (Test-Path -LiteralPath $_) } | Select-Object -First 1
     $usingRealInstallerCompiler = [bool]$installerCompilerPath
+    if ($usingRealInstallerCompiler) {
+        Write-Host "Installer verification: real Inno Setup compiler ($installerCompilerPath), including install/uninstall."
+    } else {
+        Write-Host 'Installer verification: packaging inputs only; Inno Setup is unavailable.'
+    }
 
     if (-not $installerCompilerPath) {
         $installerCompilerPath = Join-Path $packageDir 'fake-iscc.ps1'

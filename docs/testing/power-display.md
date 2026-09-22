@@ -77,7 +77,8 @@ Use a separately copied development EXE; keep the installed release intact.
 ## Development verification, 2026-09-22
 
 The Windows-local full test and 14 Python tests passed. This local run used the
-fake installer compiler; real installation is verified on the Windows CI runner.
+fake installer compiler; real install/uninstall runs when Inno Setup is available.
+The test log identifies which packaging path was exercised.
 A separate UI event check exercised selector/tray clicks, synchronized checkmarks,
 history reset and loading the preference in another form instance. The check
 restored the original preference afterward. 100%, 175% and 300% fixture previews
