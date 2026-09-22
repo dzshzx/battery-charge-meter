@@ -13,6 +13,8 @@ namespace BatteryChargeMeter
         public string Command = "gui";
         public bool SuppressElevation;
         public bool Valid;
+        public bool StartHidden;
+        public bool Handoff;
 
         public static StartupRoute Parse(string[] args)
         {
@@ -23,16 +25,21 @@ namespace BatteryChargeMeter
                 return route;
             }
             string command = args[0].ToLowerInvariant();
-            if (args.Length == 1 && (command == "--no-elevate" || command == "--elevation-attempted"))
+            if (args.Length == 1 && (command == "--no-elevate" || command == "--elevation-attempted" || command == "--autostart"))
             {
                 route.Valid = true;
                 route.SuppressElevation = true;
+                route.StartHidden = command == "--autostart";
+                route.Handoff = command == "--elevation-attempted";
                 return route;
             }
             route.Command = command;
             int number;
             switch (command)
             {
+                case "--remove-autostart":
+                    route.Valid = args.Length == 1;
+                    break;
                 case "--self-test":
                 case "--third-party-notices":
                 case "--screenshot":

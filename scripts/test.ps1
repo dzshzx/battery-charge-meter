@@ -505,4 +505,6 @@ finally {
     Remove-Item -LiteralPath $selfTestDir -Recurse -Force -ErrorAction SilentlyContinue
 }
 
+& (Join-Path $PSScriptRoot 'test-autostart.ps1') -Executable $executableArtifact.FullName -GuiOnly
+
 Write-Host 'Application and Release package tests passed.'

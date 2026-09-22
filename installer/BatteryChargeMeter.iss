@@ -47,3 +47,23 @@ Name: "{autoprograms}\Battery Charge Meter"; Filename: "{app}\BatteryChargeMeter
 
 [Run]
 Filename: "{app}\BatteryChargeMeter.exe"; Description: "Launch Battery Charge Meter (requests administrator access)"; Flags: nowait postinstall skipifsilent
+
+[Code]
+function InitializeUninstall(): Boolean;
+var
+  ExitCode: Integer;
+  ExePath: String;
+begin
+  Result := True;
+  ExePath := ExpandConstant('{app}\BatteryChargeMeter.exe');
+  if FileExists(ExePath) then
+  begin
+    if not Exec(ExePath, '--remove-autostart', ExpandConstant('{app}'),
+      SW_HIDE, ewWaitUntilTerminated, ExitCode) then
+      Result := False
+    else if ExitCode <> 0 then
+      Result := False;
+    if not Result then
+      MsgBox('Unable to remove this installation''s logon task. Close Battery Charge Meter, disable its logon startup setting as administrator, then retry uninstall.', mbError, MB_OK);
+  end;
+end;

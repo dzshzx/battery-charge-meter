@@ -1,4 +1,4 @@
-# Power display and GUI elevation acceptance
+# Power display, GUI elevation and login startup acceptance
 
 Run `pwsh -NoProfile -File .\scripts\test.ps1` from a Windows-local checkout.
 Run `python -m unittest discover -s scripts/tests -p "test_*.py"` for the release
@@ -25,6 +25,21 @@ system load remains available without PawnIO.
   temporary directory and uninstalls; otherwise it checks packaging inputs with a
   fake compiler. Run this on a disposable test account, not one with an installed
   production copy sharing the application's installer identity.
+- Task policy and ownership, stale replacement confirmation, and detecting
+  changed battery/idle/network/timeout/instance settings. The GUI-only autostart
+  integration launches a temporary copy under the existing token, verifies its
+  hidden window, duplicate suppression and restoration by a manual launch.
+
+For full Task Scheduler integration, run `scripts/test-autostart.ps1` with an
+already elevated token in the current interactive Windows session. It registers
+only a unique `BatteryChargeMeter.Test.<guid>` task against temporary EXE copies
+and removes those resources afterward. It exercises actual task launch, elevated
+token readback, replacement, drift repair, duplicate suppression and removal.
+Add `-CheckOrdinaryClient` to exercise window restoration and task deletion via
+the ordinary Explorer token. It uses `test-autostart-ordinary-client.ps1`, whose
+arguments are restricted to the matching isolated test task and temporary
+directory. This option requires an interactive Explorer desktop for the same
+Windows user.
 
 ## Interactive acceptance
 
@@ -49,6 +64,15 @@ Use a separately copied development EXE; keep the installed release intact.
    values over the same interval as the software. Report the average difference
    and response to load/charge changes; do not infer accuracy from nonsynchronous
    screenshots or convert smoothing into an accuracy claim.
+7. Enable login startup from the development copy using a disposable test
+   account. Verify the registered executable path, user, interactive logon and
+   elevated run level. Start the task explicitly: the app must enter the tray
+   without another UAC dialog, and another scheduled start must not create a
+   duplicate instance. Battery operation must not prevent or stop the task.
+8. Disable login startup and read back that its task is gone. A moved portable
+   copy must not silently adopt another copy's registration; uninstall cleanup
+   must preserve registrations targeting other executable paths. Keep actual
+   reboot/logon acceptance distinct from a manual scheduled-task launch.
 
 ## Development verification, 2026-09-22
 
@@ -64,5 +88,22 @@ A development EXE was copied separately to the REDMI Book Pro 14 2025 and run wi
 `--power-probe` using an existing elevated session. EMI and PawnIO were available;
 five samples reported 27.98 W battery charge, 31.80–46.08 W platform and
 59.78–74.06 W estimated input. These samples verify the data path and unchanged
-formula, not absolute input-meter accuracy. Live interactive UAC acceptance and
-simultaneous physical-meter comparison are separate from this automated evidence.
+formula, not absolute input-meter accuracy.
+
+The user confirmed on this notebook that canceling the first UAC prompt kept the
+ordinary window usable, then the administrator restart action succeeded after
+approval, with matching whole-system window and tray readings. Process readback
+showed one development process with the elevation-attempted argument. A
+simultaneous physical-meter comparison is not part of this automated evidence.
+
+The autostart increment passed the Windows-local suite (89 self-test cases and
+the ordinary-token GUI integration). On the notebook, the full isolated
+`test-autostart.ps1 -CheckOrdinaryClient` run passed registration, replacement,
+policy drift/repair, actual elevated scheduler launch, hidden-window restoration,
+duplicate suppression, handoff and deletion. The Explorer-launched helper
+confirmed its ordinary token and the same user SID before restoring the elevated
+window and deleting the task. Windows account-name normalization and the task
+ACL needed for ordinary-token cleanup were corrected using these live results.
+Independent review found no remaining issues in those fixes. These checks did
+not restart or log off the notebook; actual login-trigger acceptance remains a
+separate manual check. The installed release and its startup state were retained.

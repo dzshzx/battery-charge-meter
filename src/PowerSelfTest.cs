@@ -36,6 +36,7 @@ namespace BatteryChargeMeter
             failures += DisplayCases(log);
             failures += HistoryCases(log);
             failures += StartupCases(log);
+            failures += AutostartCases(log);
 
             log.AppendLine();
             passed = failures == 0;
@@ -173,6 +174,92 @@ namespace BatteryChargeMeter
             ElevationResult cancel = Startup.Launch(delegate { throw new System.ComponentModel.Win32Exception(1223); });
             ElevationResult failure = Startup.Launch(delegate { throw new InvalidOperationException("failure"); });
             failures += Check(log, "cancel and launch failure retain ordinary GUI with reason", !cancel.Started && cancel.Message.Contains("取消") && !failure.Started && failure.Message.Contains("failure") && !Startup.Launch(delegate { return false; }).Started);
+            return failures;
+        }
+
+        private static int AutostartCases(StringBuilder log)
+        {
+            int calls = 0;
+            StartupRoute route = StartupRoute.Parse(new string[] { "--autostart" });
+            Startup.Route(route, false, delegate
+            {
+                calls++;
+                return new ElevationResult { Started = true };
+            });
+            int failures = Check(log, "autostart hides GUI and never requests UAC even with ordinary token",
+                route.Valid && route.Command == "gui" && route.StartHidden && route.SuppressElevation && calls == 0);
+            StartupRoute cleanup = StartupRoute.Parse(new string[] { "--remove-autostart" });
+            Startup.Route(cleanup, false, delegate
+            {
+                calls++;
+                return new ElevationResult { Started = true };
+            });
+            failures += Check(log, "uninstall cleanup is non-GUI and never elevates",
+                cleanup.Valid && cleanup.Command != "gui" && calls == 0);
+            failures += Check(log, "autostart rejects extra arguments",
+                !StartupRoute.Parse(new string[] { "--autostart", "extra" }).Valid);
+            string sid = "S-1-5-21-111-222-333-1001";
+            string path = @"C:\Test & 测试\Meter 1.2.1.exe";
+            string xml = AutostartManager.BuildXml(path, sid);
+            AutostartState state = AutostartManager.Inspect(xml, path, sid);
+            failures += Check(log, "logon task roundtrips escaped exact executable path and elevated interactive user policy",
+                state.Exists && state.Enabled && state.ThisCopy && state.Executable == path
+                && xml.Contains("<DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>")
+                && xml.Contains("<StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>")
+                && xml.Contains("<ExecutionTimeLimit>PT0S</ExecutionTimeLimit>")
+                && xml.Contains("<MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>"));
+            failures += Check(log, "other copies are distinguished without registry booleans",
+                !AutostartManager.Inspect(xml, @"C:\Other\Meter.exe", sid).ThisCopy);
+            failures += Check(log, "disabled task is read as disabled",
+                !AutostartManager.Inspect(xml.Replace("<Enabled>true</Enabled>", "<Enabled>false</Enabled>"), path, sid).Enabled);
+            bool foreignRejected = false;
+            try
+            {
+                AutostartManager.Inspect(xml.Replace("BatteryChargeMeter.Logon.v1", "someone-else"), path, sid);
+            }
+            catch (InvalidOperationException)
+            {
+                foreignRejected = true;
+            }
+            failures += Check(log, "foreign task ownership marker prevents mutation", foreignRejected);
+            using (System.Security.Principal.WindowsIdentity identity = System.Security.Principal.WindowsIdentity.GetCurrent())
+            {
+                string currentSid = identity.User.Value;
+                string accountXml = AutostartManager.BuildXml(path, currentSid).Replace(currentSid,
+                    System.Security.SecurityElement.Escape(identity.Name));
+                failures += Check(log, "scheduler account-name normalization preserves exact user identity",
+                    AutostartManager.Inspect(accountXml, path, currentSid).Enabled);
+                failures += Check(log, "different logon account cannot be treated as current-user startup",
+                    !AutostartManager.Inspect(xml.Replace("<LogonTrigger><Enabled>true</Enabled><UserId>" + sid,
+                        "<LogonTrigger><Enabled>true</Enabled><UserId>" + currentSid), path, sid).Enabled);
+            }
+            string[] drift = new string[]
+            {
+                xml.Replace("<DisallowStartIfOnBatteries>false", "<DisallowStartIfOnBatteries>true"),
+                xml.Replace("<StopIfGoingOnBatteries>false", "<StopIfGoingOnBatteries>true"),
+                xml.Replace("<RunOnlyIfIdle>false", "<RunOnlyIfIdle>true"),
+                xml.Replace("<RunOnlyIfNetworkAvailable>false", "<RunOnlyIfNetworkAvailable>true"),
+                xml.Replace("<ExecutionTimeLimit>PT0S", "<ExecutionTimeLimit>PT1H"),
+                xml.Replace("<MultipleInstancesPolicy>IgnoreNew", "<MultipleInstancesPolicy>Parallel")
+            };
+            foreach (string changed in drift)
+            {
+                AutostartState altered = AutostartManager.Inspect(changed, path, sid);
+                failures += Check(log, "changed task policy requires explicit repair",
+                    !altered.Enabled && !String.IsNullOrEmpty(altered.RepairReason));
+            }
+            bool staleRejected = false;
+            try
+            {
+                AutostartManager.RequireUnchanged(state, AutostartManager.Inspect(
+                    AutostartManager.BuildXml(@"C:\Third copy\Meter.exe", sid), path, sid));
+            }
+            catch (InvalidOperationException)
+            {
+                staleRejected = true;
+            }
+            failures += Check(log, "confirmation for copy A cannot authorize overwriting concurrent copy C", staleRejected);
+            AutostartManager.RequireUnchanged(state, AutostartManager.Inspect(xml, path, sid));
             return failures;
         }
 

@@ -76,6 +76,10 @@ namespace BatteryChargeMeter
             System.Text.StringBuilder reasons = new System.Text.StringBuilder();
             if (!String.IsNullOrEmpty(elevationMessage))
                 reasons.AppendLine(elevationMessage);
+            if (!String.IsNullOrEmpty(autostartStateMessage))
+                reasons.AppendLine(autostartStateMessage);
+            else if (!String.IsNullOrEmpty(autostartMessage))
+                reasons.AppendLine(autostartMessage);
             foreach (PowerSample sample in new PowerSample[] { snapshot.BatteryTerminal, snapshot.CpuPackage, snapshot.Platform })
             {
                 if (sample != null && !sample.Available)

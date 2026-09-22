@@ -228,14 +228,21 @@ namespace BatteryChargeMeter
         private ToolStripMenuItem wholeModeItem;
         private ToolStripMenuItem batteryModeItem;
         private string elevationMessage;
+        private uint restoreMessage;
+        private IntPtr restoreWindow;
 
         public MainForm(bool enableTray) : this(enableTray, null)
         {
         }
 
-        public MainForm(bool enableTray, string startupMessage)
+        public MainForm(bool enableTray, string startupMessage) : this(enableTray, startupMessage, false)
+        {
+        }
+
+        public MainForm(bool enableTray, string startupMessage, bool hidden)
         {
             trayEnabled = enableTray;
+            startHidden = hidden;
             Text = "Battery Charge Meter";
             AutoScaleMode = AutoScaleMode.None;
             AutoScroll = true;
@@ -288,7 +295,7 @@ namespace BatteryChargeMeter
             note.ForeColor = Color.FromArgb(100, 116, 139);
 
             CheckBox topMostCheckBox = new CheckBox();
-            topMostCheckBox.Text = "Always on top";
+            topMostCheckBox.Text = "置顶";
             topMostCheckBox.Checked = true;
             topMostCheckBox.AutoSize = true;
             topMostCheckBox.Location = new Point(20, 539);
@@ -297,7 +304,7 @@ namespace BatteryChargeMeter
             topMostCheckBox.CheckedChanged += delegate { TopMost = topMostCheckBox.Checked; };
             Controls.Add(topMostCheckBox);
 
-            updatedLabel = NewLabel("Waiting for sensor...", 215, 536, 194, 22, 8.5f, FontStyle.Regular);
+            updatedLabel = NewLabel("等待采样", 290, 536, 120, 22, 8.5f, FontStyle.Regular);
             updatedLabel.ForeColor = Color.FromArgb(100, 116, 139);
             updatedLabel.TextAlign = ContentAlignment.MiddleRight;
 
@@ -364,14 +371,12 @@ namespace BatteryChargeMeter
             };
             Controls.Add(modeSelector);
             BuildElevationControls(startupMessage);
+            BuildAutostartControls();
             ChangeMode(displayMode);
 
             Shown += delegate
             {
-                if (trayEnabled)
-                    trayIcon.Visible = true;
-                RefreshReading();
-                timer.Start();
+                StartMonitoring();
             };
 
             dpiLayout = new DpiLayout(this, ClientSize);
@@ -381,10 +386,29 @@ namespace BatteryChargeMeter
         {
             base.OnHandleCreated(e);
             dpiLayout.Apply(ReadWindowDpi());
+            if (trayEnabled)
+            {
+                restoreMessage = GuiInstance.ListenForRestore(Handle, Application.ExecutablePath);
+                restoreWindow = Handle;
+            }
+        }
+
+        protected override void OnHandleDestroyed(EventArgs e)
+        {
+            if (restoreWindow != IntPtr.Zero)
+                GuiInstance.StopListening(restoreWindow, Application.ExecutablePath);
+            restoreWindow = IntPtr.Zero;
+            base.OnHandleDestroyed(e);
         }
 
         protected override void WndProc(ref Message message)
         {
+            if (restoreMessage != 0 && message.Msg == restoreMessage)
+            {
+                RestoreFromTray();
+                message.Result = IntPtr.Zero;
+                return;
+            }
             // WinForms gates its DpiChanged event behind app.config; handle the native
             // message so the application EXE retains per-monitor scaling.
             if (message.Msg == NativeMethods.WmDpiChanged && message.LParam != IntPtr.Zero)
@@ -488,6 +512,7 @@ namespace BatteryChargeMeter
 
         private void RestoreFromTray()
         {
+            startHidden = false;
             ShowInTaskbar = true;
             Show();
             WindowState = FormWindowState.Normal;
@@ -563,7 +588,7 @@ namespace BatteryChargeMeter
             batteryBar.SetValue(reading.Percentage, accent);
             UpdatePowerSources(snapshot);
             int scalePercent = (int)Math.Round(dpiLayout.CurrentDpi * 100.0 / 96.0);
-            updatedLabel.Text = "Updated " + snapshot.Timestamp.ToString("HH:mm:ss")
+            updatedLabel.Text = snapshot.Timestamp.ToString("HH:mm:ss")
                 + "  |  " + scalePercent.ToString(CultureInfo.InvariantCulture) + "%";
             UpdateTrayDisplay(selected, profile);
         }
@@ -754,9 +779,38 @@ namespace BatteryChargeMeter
                 Environment.ExitCode = 2;
                 return;
             }
-            ElevationResult elevation = Startup.Route(route, Startup.IsElevated(), Startup.TryElevate);
-            if (elevation.Started)
+            if (route.Command == "gui")
+            {
+                using (GuiInstance instance = new GuiInstance())
+                {
+                    if (!instance.Acquire(Application.ExecutablePath, route.Handoff))
+                    {
+                        if (!route.StartHidden)
+                            GuiInstance.RestoreExisting(Application.ExecutablePath);
+                        return;
+                    }
+                    ElevationResult elevation = Startup.Route(route, Startup.IsElevated(), Startup.TryElevate);
+                    if (elevation.Started)
+                        return;
+                    Application.EnableVisualStyles();
+                    Application.SetCompatibleTextRenderingDefault(false);
+                    Application.Run(new MainForm(true, elevation.Message, route.StartHidden));
+                }
                 return;
+            }
+            if (route.Command == "--remove-autostart")
+            {
+                try
+                {
+                    using (AutostartManager manager = AutostartManager.ForCurrentExecutable(Application.ExecutablePath))
+                        manager.Disable();
+                }
+                catch
+                {
+                    Environment.ExitCode = 1;
+                }
+                return;
+            }
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
 
@@ -827,7 +881,7 @@ namespace BatteryChargeMeter
                 return;
             }
 
-            Application.Run(new MainForm(true, elevation.Message));
+            Environment.ExitCode = 2;
         }
     }
 }
