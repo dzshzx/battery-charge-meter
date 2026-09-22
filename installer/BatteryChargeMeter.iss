@@ -49,21 +49,21 @@ Name: "{autoprograms}\Battery Charge Meter"; Filename: "{app}\BatteryChargeMeter
 Filename: "{app}\BatteryChargeMeter.exe"; Description: "Launch Battery Charge Meter (requests administrator access)"; Flags: nowait postinstall skipifsilent
 
 [Code]
-function InitializeUninstall(): Boolean;
+procedure InitializeUninstallProgressForm();
 var
   ExitCode: Integer;
   ExePath: String;
 begin
-  Result := True;
+  { Inno calls this after affirmative confirmation and before PerformUninstall.
+    Setup.Uninstall.pas re-raises exceptions from this event as fatal, so a
+    failed cleanup preserves the installed EXE and uninstall data. }
   ExePath := ExpandConstant('{app}\BatteryChargeMeter.exe');
   if FileExists(ExePath) then
   begin
     if not Exec(ExePath, '--remove-autostart', ExpandConstant('{app}'),
       SW_HIDE, ewWaitUntilTerminated, ExitCode) then
-      Result := False
+      RaiseException('Unable to start logon-task cleanup. Uninstall has been stopped; the application is still installed.')
     else if ExitCode <> 0 then
-      Result := False;
-    if not Result then
-      MsgBox('Unable to remove this installation''s logon task. Close Battery Charge Meter, disable its logon startup setting as administrator, then retry uninstall.', mbError, MB_OK);
+      RaiseException('Unable to remove this installation''s logon task. Uninstall has been stopped; disable its logon startup setting as administrator, then retry.');
   end;
 end;

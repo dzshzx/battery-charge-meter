@@ -426,51 +426,9 @@ Set-Content -LiteralPath (Join-Path $outputDirectory "$outputBaseName.exe") -Val
     }
 
     if ($usingRealInstallerCompiler) {
-        $installDir = Join-Path $packageDir 'installed-application'
-        $installProcess = Start-Process `
-            -FilePath $package.InstallerPath `
-            -ArgumentList @(
-                '/VERYSILENT',
-                '/SUPPRESSMSGBOXES',
-                '/NORESTART',
-                ('/DIR="{0}"' -f $installDir)
-            ) `
-            -Wait `
-            -PassThru
-        if ($installProcess.ExitCode -ne 0) {
-            throw "Silent installer smoke test failed with exit code $($installProcess.ExitCode)."
-        }
-
-        foreach ($installedFile in @(
-            'BatteryChargeMeter.exe',
-            'THIRD-PARTY-NOTICES.txt',
-            'LICENSE.LGPL-2.1.txt'
-        )) {
-            if (-not (Test-Path -LiteralPath (Join-Path $installDir $installedFile))) {
-                throw "Installer omitted required file: $installedFile"
-            }
-        }
-
-        $uninstallerPath = Join-Path $installDir 'unins000.exe'
-        if (-not (Test-Path -LiteralPath $uninstallerPath)) {
-            throw 'Installer did not create an uninstaller.'
-        }
-        $uninstallProcess = Start-Process `
-            -FilePath $uninstallerPath `
-            -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART') `
-            -Wait `
-            -PassThru
-        if ($uninstallProcess.ExitCode -ne 0) {
-            throw "Silent uninstaller smoke test failed with exit code $($uninstallProcess.ExitCode)."
-        }
-        $uninstallDeadline = [DateTime]::UtcNow.AddSeconds(5)
-        while ((Test-Path -LiteralPath $uninstallerPath) -and
-            [DateTime]::UtcNow -lt $uninstallDeadline) {
-            Start-Sleep -Milliseconds 100
-        }
-        if (Test-Path -LiteralPath $uninstallerPath) {
-            throw 'Silent uninstaller did not finish removing the application.'
-        }
+        & (Join-Path $PSScriptRoot 'test-installer-uninstall.ps1') `
+            -InstallerCompilerPath $installerCompilerPath `
+            -ExecutablePath $executableArtifact.FullName
     }
 }
 finally {

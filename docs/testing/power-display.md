@@ -21,10 +21,12 @@ system load remains available without PawnIO.
 - Real CLI execution with timeouts, diagnostic fields, notice extraction,
   screenshots, tray previews and DPI transitions. Error text bounds are checked
   to prevent TextBox AutoSize from breaking scaling.
-- Portable/installer packaging. With ISCC installed, the test installs to a
-  temporary directory and uninstalls; otherwise it checks packaging inputs with a
-  fake compiler. Run this on a disposable test account, not one with an installed
-  production copy sharing the application's installer identity.
+- Portable/installer packaging. With ISCC installed, an isolated installer
+  identity uses the shipping uninstall hook and task manager. Real confirmation
+  dialogs exercise cancellation, cleanup failure and successful removal against
+  a disabled test task. Cancellation preserves the task, cleanup failure keeps
+  the installation, and successful removal deletes the matching task. Without
+  ISCC, the suite checks packaging inputs with a fake compiler.
 - Task policy and ownership, stale replacement confirmation, and detecting
   changed battery/idle/network/timeout/instance settings. The GUI-only autostart
   integration launches a temporary copy under the existing token, verifies its
@@ -108,3 +110,8 @@ ACL needed for ordinary-token cleanup were corrected using these live results.
 Independent review found no remaining issues in those fixes. These checks did
 not restart or log off the notebook; actual login-trigger acceptance remains a
 separate manual check. The installed release and its startup state were retained.
+
+The uninstall lifecycle regression passed 18 assertions with real Inno Setup
+6.7.1. Cleanup runs after affirmative confirmation and before file removal;
+failures abort removal while keeping the EXE and uninstall data. The fixture
+uses unique task, installer and shortcut identities and cleans them afterward.
