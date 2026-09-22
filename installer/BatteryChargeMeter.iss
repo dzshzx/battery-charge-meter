@@ -36,6 +36,9 @@ SolidCompression=yes
 WizardStyle=modern
 VersionInfoVersion={#AppVersion}.0
 UninstallDisplayIcon={app}\BatteryChargeMeter.exe
+#ifdef IconPath
+SetupIconFile={#IconPath}
+#endif
 
 [Files]
 Source: "{#SourceExe}"; DestDir: "{app}"; DestName: "BatteryChargeMeter.exe"; Flags: ignoreversion

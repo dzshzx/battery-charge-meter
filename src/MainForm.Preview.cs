@@ -135,7 +135,7 @@ namespace BatteryChargeMeter
 
         public void RenderTrayIconPreview(string path, string glyph, bool discharging)
         {
-            Color color = discharging ? trayDischargeColor : Color.White;
+            Color color = discharging ? UiTheme.Discharging : UiTheme.Charging;
             using (Icon icon = CreateTextIcon(glyph, color))
             using (Bitmap bitmap = icon.ToBitmap())
                 bitmap.Save(path, ImageFormat.Png);
