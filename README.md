@@ -214,23 +214,21 @@ python scripts/version_plan.py plan `
 版本精确递增一个 patch 可沿用已有发布授权；minor、major 或跳号 patch 必须暂停，等用户
 明确确认输出的完整“基线到目标”计划。基线未知和降级会直接拒绝。候选通过任务分支和 PR 合入 `master`，
 等待该同一 SHA 的 Windows CI 全绿，再确认远端 tag 未占用并创建匹配的带注解 tag。
-例如 manifest `1.3.0.0` 对应 `v1.3.0`。精确递增 patch 使用：
+以下以 `v1.2.1` 为示例基线，按获准计划选择对应的一组命令。
+精确递增 patch 到 `v1.2.2` 时，manifest 为 `1.2.2.0`：
 
 ```powershell
 # 等待 master 上这个 SHA 的 CI 成功
-git tag -a v1.3.0 -m "Release v1.3.0"
+git tag -a v1.2.2 -m "Release v1.2.2"
+git push origin v1.2.2
 ```
 
-已经明确确认的 minor、major 或跳号 patch 计划改用带摘要的 tag 命令：
+已经明确确认的 minor、major 或跳号 patch 计划使用带摘要的 tag 命令。
+例如获准从 `v1.2.1` 升到 `v1.3.0` 时，manifest 为 `1.3.0.0`：
 
 ```powershell
 git tag -a v1.3.0 -m "Release v1.3.0" `
   -m "Version-Approval: sha256:<version_plan.py 输出的摘要>"
-```
-
-以上 tag 命令二选一，再推送创建好的 annotated tag：
-
-```powershell
 git push origin v1.3.0
 ```
 
