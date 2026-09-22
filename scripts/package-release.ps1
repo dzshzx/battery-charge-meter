@@ -61,8 +61,12 @@ if ($includePortable) {
 $noticeProcess = Start-Process `
     -FilePath $resolvedExecutable `
     -ArgumentList @('--third-party-notices', ('"{0}"' -f $noticesPath)) `
-    -Wait `
     -PassThru
+if (-not $noticeProcess.WaitForExit(15000)) {
+    $noticeProcess.Kill()
+    $noticeProcess.WaitForExit()
+    throw 'The application did not finish exporting third-party notices.'
+}
 if ($noticeProcess.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $noticesPath)) {
     throw "The application failed to export third-party notices (exit $($noticeProcess.ExitCode))."
 }

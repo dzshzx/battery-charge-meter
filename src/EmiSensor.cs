@@ -289,6 +289,7 @@ namespace BatteryChargeMeter
 
             // Energy is picowatt-hours, time is 100 ns units.
             double seconds = timeDelta / 1e7;
+            if (seconds > PowerHistory.MaximumGap) return false;
             watts = (energyDelta / 1e12) * 3600.0 / seconds;
             window = TimeSpan.FromSeconds(seconds);
             return !Double.IsNaN(watts) && !Double.IsInfinity(watts);

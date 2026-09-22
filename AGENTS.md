@@ -8,8 +8,10 @@ commands are in `README.md`, and PawnIO obligations in `third_party/NOTICE.md`.
   On external power, estimated System Input Power is Platform Power plus this
   signed value, including battery supplementation. On battery, System Load
   Power is the magnitude of discharge. Conversion losses are not measured.
-- The app runs `asInvoker`. PawnIO/Psys is optional, requires a user-installed
-  official driver and elevated launch; the app must not silently install it.
+- Keep the manifest `asInvoker`: GUI startup requests elevation once, with
+  cancellation falling back to ordinary mode. CLI commands never request UAC.
+  PawnIO/Psys requires a user-installed official driver and elevated launch;
+  the app must not silently install it.
 - Portable EXE and per-user installer are equal release options. Preserve the
   replaceable `IntelMSR.bin` sidecar, LGPL notice/licence and exact corresponding
   source bundle; release assets include both formats and SHA-256 files.

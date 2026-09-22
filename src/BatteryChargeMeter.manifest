@@ -8,8 +8,8 @@
   <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">
     <security>
       <requestedPrivileges>
-        <!-- Battery and EMI measurements need no elevation. PawnIO platform
-             power is optional and reports that an elevated launch is needed. -->
+        <!-- GUI startup requests runas once in code; CLI commands and the
+             explicit opt-out retain their inherited token. PawnIO stays optional. -->
         <requestedExecutionLevel level="asInvoker" uiAccess="false" />
       </requestedPrivileges>
     </security>

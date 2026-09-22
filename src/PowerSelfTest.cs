@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Globalization;
 using System.Text;
+using System.Windows.Forms;
 
 namespace BatteryChargeMeter
 {
@@ -31,6 +32,11 @@ namespace BatteryChargeMeter
             failures += ValidationCases(log);
             failures += EmiMetadataCases(log);
             failures += LayoutCases(log);
+            failures += PresentationCases(log);
+            failures += DisplayCases(log);
+            failures += HistoryCases(log);
+            failures += StartupCases(log);
+            failures += AutostartCases(log);
 
             log.AppendLine();
             passed = failures == 0;
@@ -39,6 +45,222 @@ namespace BatteryChargeMeter
                 : failures.ToString(CultureInfo.InvariantCulture) + " power self test case(s) failed.");
 
             return log.ToString();
+        }
+
+        private static int DisplayCases(StringBuilder log)
+        {
+            int failures = 0;
+            PowerSample platform = PowerSample.FromValue(PowerBoundary.Platform, MeasurementKind.Measured, 24, "test", TimeSpan.FromSeconds(1));
+            foreach (BatteryReading battery in new BatteryReading[] { Battery(true, true, true, 13), Battery(true, false, true, -5), Battery(false, false, true, -26) })
+            {
+                PowerSnapshot snapshot = new PowerSnapshot { Battery = battery, BatteryTerminal = PowerSources.BatterySample(battery), WholeSystem = PowerSources.DeriveWholeSystem(platform, battery) };
+                failures += Check(log, "selected boundary is shared without substitution: " + battery.SupplyState,
+                    Object.ReferenceEquals(PowerDisplay.Select(snapshot, DisplayMode.WholeSystem), snapshot.WholeSystem)
+                    && Near(PowerDisplay.Select(snapshot, DisplayMode.Battery).Watts, battery.PowerWatts));
+            }
+            BatteryReading charging = Battery(true, true, true, 13);
+            PowerSnapshot missing = new PowerSnapshot { BatteryTerminal = PowerSources.BatterySample(charging), WholeSystem = PowerSources.DeriveWholeSystem(PowerSample.Unsupported(PowerBoundary.Platform, "missing"), charging) };
+            failures += Check(log, "whole mode does not fall back to available battery", !PowerDisplay.Select(missing, DisplayMode.WholeSystem).Available && PowerDisplay.Select(missing, DisplayMode.Battery).Available);
+            failures += Check(log, "preferences default safely for missing malformed or inaccessible storage",
+                DisplayPreference.Load(delegate { return null; }) == DisplayMode.WholeSystem
+                && DisplayPreference.Load(delegate { return "invalid"; }) == DisplayMode.WholeSystem
+                && DisplayPreference.Load(delegate { throw new InvalidOperationException(); }) == DisplayMode.WholeSystem
+                && DisplayPreference.Load(delegate { return "Battery"; }) == DisplayMode.Battery);
+            return failures;
+        }
+
+        private static PowerSample Value(double watts)
+        {
+            return PowerSample.FromValue(PowerBoundary.BatteryTerminal, MeasurementKind.Measured, watts, "test", TimeSpan.Zero);
+        }
+
+        private static int HistoryCases(StringBuilder log)
+        {
+            int failures = 0;
+            PowerHistory history = new PowerHistory();
+            BatterySupplyState supply = BatterySupplyState.BatteryDischarging;
+            history.Add(0, DisplayMode.Battery, supply, Value(-10));
+            history.Add(1, DisplayMode.Battery, supply, Value(-20));
+            history.Add(4, DisplayMode.Battery, supply, Value(-20));
+            double coverage;
+            double? average = history.Average(out coverage);
+            failures += Check(log, "irregular observations use elapsed weighting and partial window", average.HasValue && Near(average.Value, -17.5) && Near(coverage, 4) && Near(history.Duration(60), 4));
+            failures += Check(log, "peak retains sign at greatest magnitude", Near(history.Peak().Value, -20));
+            history.Add(5, DisplayMode.Battery, supply, PowerSample.Unsupported(PowerBoundary.BatteryTerminal, "gap"));
+            failures += Check(log, "missing sample is a chart break and immediately unavailable statistics", !history.Peak().HasValue && !history.Average(out coverage).HasValue && !history.Points[3].Watts.HasValue);
+            history.Add(6, DisplayMode.Battery, supply, Value(-30));
+            average = history.Average(out coverage);
+            failures += Check(log, "missing intervals are excluded without zero fill", Near(coverage, 4) && Near(average.Value, -17.5));
+            history.Add(20, DisplayMode.Battery, supply, Value(-30));
+            failures += Check(log, "resume gap clears baseline", history.Points.Count == 1 && !history.Average(out coverage).HasValue);
+            history.Add(21, DisplayMode.WholeSystem, supply, Value(30));
+            failures += Check(log, "mode change clears history", history.Points.Count == 1);
+            history.Add(22, DisplayMode.WholeSystem, BatterySupplyState.ExternalPowerIdle, Value(30));
+            failures += Check(log, "supply state change clears history", history.Points.Count == 1);
+            history.Clear();
+            for (int second = 0; second <= 70; second++) history.Add(second, DisplayMode.Battery, supply, Value(second == 20 ? -100 : -10));
+            average = history.Average(out coverage);
+            failures += Check(log, "30 second mean differs from 60 second peak; repeated readings stay fresh", Near(average.Value, -10) && Near(coverage, 30) && Near(history.Peak().Value, -100) && Near(history.Duration(60), 60));
+            for (int second = 71; second <= 81; second++) history.Add(second, DisplayMode.Battery, supply, Value(-10));
+            failures += Check(log, "old peak expires at real 60 second boundary", Near(history.Peak().Value, -10));
+            history.Clear();
+            for (int second = 0; second <= 32; second += 4)
+                history.Add(second, DisplayMode.Battery, supply, Value(second == 0 ? 40 : 10));
+            average = history.Average(out coverage);
+            failures += Check(log, "weighted mean clips the first interval at exact 30 second cutoff", Near(average.Value, 12) && Near(coverage, 30));
+            IList<TimedPower> visible = PowerDisplay.VisibleHistory(new TimedPower[]
+            {
+                new TimedPower { Seconds = 0, Watts = 1000 },
+                new TimedPower { Seconds = 4, Watts = 10 },
+                new TimedPower { Seconds = 62, Watts = 12 }
+            });
+            failures += Check(log, "chart excludes expired predecessor from segments and vertical scale",
+                visible.Count == 2 && Near(visible[0].Seconds, 4) && Near(visible[0].Watts.Value, 10));
+            failures += Check(log, "nonfinite sensor values cannot reach chart or tray", !Value(Double.NaN).Available && !Value(Double.PositiveInfinity).Available);
+            return failures;
+        }
+
+        private static int StartupCases(StringBuilder log)
+        {
+            int failures = 0;
+            int launches = 0;
+            Func<ElevationResult> launch = delegate
+            {
+                launches++;
+                return new ElevationResult { Started = true };
+            };
+            failures += Check(log, "ordinary GUI requests elevation once and exits parent on success", Startup.Route(StartupRoute.Parse(new string[0]), false, launch).Started && launches == 1);
+            Startup.Route(StartupRoute.Parse(new string[0]), true, launch);
+            Startup.Route(StartupRoute.Parse(new string[] { "--no-elevate" }), false, launch);
+            Startup.Route(StartupRoute.Parse(new string[] { "--elevation-attempted" }), false, launch);
+            string[][] cli = new string[][]
+            {
+                new string[] { "--self-test", "x" },
+                new string[] { "--power-probe", "x", "2" },
+                new string[] { "--third-party-notices", "x" },
+                new string[] { "--screenshot", "x" },
+                new string[] { "--dpi-preview", "x", "168" },
+                new string[] { "--tray-preview", "x", "42", "charging" }
+            };
+            foreach (string[] args in cli)
+            {
+                StartupRoute route = StartupRoute.Parse(args);
+                failures += Check(log, "CLI route valid without GUI: " + args[0], route.Valid && route.Command != "gui");
+                Startup.Route(route, false, launch);
+
+                StartupRoute missingOutput = StartupRoute.Parse(new string[] { args[0] });
+                failures += Check(log, "missing CLI arguments fail without UAC: " + args[0],
+                    !missingOutput.Valid && !Startup.Route(missingOutput, false, launch).Started && launches == 1);
+            }
+            failures += Check(log, "already elevated, explicit ordinary GUI, child marker and all CLI bypass UAC", launches == 1);
+            string[][] invalid = new string[][]
+            {
+                new string[] { "--wat" },
+                new string[] { "--self-test" },
+                new string[] { "--no-elevate", "extra" },
+                new string[] { "--power-probe", "x", "0" },
+                new string[] { "--dpi-preview", "x", "bad" },
+                new string[] { "--dpi-preview", "x" },
+                new string[] { "--tray-preview", "x", "42" },
+                new string[] { "--tray-preview", "x", "42", "bogus" }
+            };
+            foreach (string[] args in invalid)
+            {
+                StartupRoute route = StartupRoute.Parse(args);
+                failures += Check(log, "invalid arguments rejected: " + String.Join(" ", args), !route.Valid);
+                Startup.Route(route, false, launch);
+            }
+            failures += Check(log, "invalid route cannot launch UAC", launches == 1);
+            ElevationResult cancel = Startup.Launch(delegate { throw new System.ComponentModel.Win32Exception(1223); });
+            ElevationResult failure = Startup.Launch(delegate { throw new InvalidOperationException("failure"); });
+            failures += Check(log, "cancel and launch failure retain ordinary GUI with reason", !cancel.Started && cancel.Message.Contains("取消") && !failure.Started && failure.Message.Contains("failure") && !Startup.Launch(delegate { return false; }).Started);
+            return failures;
+        }
+
+        private static int AutostartCases(StringBuilder log)
+        {
+            int calls = 0;
+            StartupRoute route = StartupRoute.Parse(new string[] { "--autostart" });
+            Startup.Route(route, false, delegate
+            {
+                calls++;
+                return new ElevationResult { Started = true };
+            });
+            int failures = Check(log, "autostart hides GUI and never requests UAC even with ordinary token",
+                route.Valid && route.Command == "gui" && route.StartHidden && route.SuppressElevation && calls == 0);
+            StartupRoute cleanup = StartupRoute.Parse(new string[] { "--remove-autostart" });
+            Startup.Route(cleanup, false, delegate
+            {
+                calls++;
+                return new ElevationResult { Started = true };
+            });
+            failures += Check(log, "uninstall cleanup is non-GUI and never elevates",
+                cleanup.Valid && cleanup.Command != "gui" && calls == 0);
+            failures += Check(log, "autostart rejects extra arguments",
+                !StartupRoute.Parse(new string[] { "--autostart", "extra" }).Valid);
+            string sid = "S-1-5-21-111-222-333-1001";
+            string path = @"C:\Test & 测试\Meter 1.2.1.exe";
+            string xml = AutostartManager.BuildXml(path, sid);
+            AutostartState state = AutostartManager.Inspect(xml, path, sid);
+            failures += Check(log, "logon task roundtrips escaped exact executable path and elevated interactive user policy",
+                state.Exists && state.Enabled && state.ThisCopy && state.Executable == path
+                && xml.Contains("<DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>")
+                && xml.Contains("<StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>")
+                && xml.Contains("<ExecutionTimeLimit>PT0S</ExecutionTimeLimit>")
+                && xml.Contains("<MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>"));
+            failures += Check(log, "other copies are distinguished without registry booleans",
+                !AutostartManager.Inspect(xml, @"C:\Other\Meter.exe", sid).ThisCopy);
+            failures += Check(log, "disabled task is read as disabled",
+                !AutostartManager.Inspect(xml.Replace("<Enabled>true</Enabled>", "<Enabled>false</Enabled>"), path, sid).Enabled);
+            bool foreignRejected = false;
+            try
+            {
+                AutostartManager.Inspect(xml.Replace("BatteryChargeMeter.Logon.v1", "someone-else"), path, sid);
+            }
+            catch (InvalidOperationException)
+            {
+                foreignRejected = true;
+            }
+            failures += Check(log, "foreign task ownership marker prevents mutation", foreignRejected);
+            using (System.Security.Principal.WindowsIdentity identity = System.Security.Principal.WindowsIdentity.GetCurrent())
+            {
+                string currentSid = identity.User.Value;
+                string accountXml = AutostartManager.BuildXml(path, currentSid).Replace(currentSid,
+                    System.Security.SecurityElement.Escape(identity.Name));
+                failures += Check(log, "scheduler account-name normalization preserves exact user identity",
+                    AutostartManager.Inspect(accountXml, path, currentSid).Enabled);
+                failures += Check(log, "different logon account cannot be treated as current-user startup",
+                    !AutostartManager.Inspect(xml.Replace("<LogonTrigger><Enabled>true</Enabled><UserId>" + sid,
+                        "<LogonTrigger><Enabled>true</Enabled><UserId>" + currentSid), path, sid).Enabled);
+            }
+            string[] drift = new string[]
+            {
+                xml.Replace("<DisallowStartIfOnBatteries>false", "<DisallowStartIfOnBatteries>true"),
+                xml.Replace("<StopIfGoingOnBatteries>false", "<StopIfGoingOnBatteries>true"),
+                xml.Replace("<RunOnlyIfIdle>false", "<RunOnlyIfIdle>true"),
+                xml.Replace("<RunOnlyIfNetworkAvailable>false", "<RunOnlyIfNetworkAvailable>true"),
+                xml.Replace("<ExecutionTimeLimit>PT0S", "<ExecutionTimeLimit>PT1H"),
+                xml.Replace("<MultipleInstancesPolicy>IgnoreNew", "<MultipleInstancesPolicy>Parallel")
+            };
+            foreach (string changed in drift)
+            {
+                AutostartState altered = AutostartManager.Inspect(changed, path, sid);
+                failures += Check(log, "changed task policy requires explicit repair",
+                    !altered.Enabled && !String.IsNullOrEmpty(altered.RepairReason));
+            }
+            bool staleRejected = false;
+            try
+            {
+                AutostartManager.RequireUnchanged(state, AutostartManager.Inspect(
+                    AutostartManager.BuildXml(@"C:\Third copy\Meter.exe", sid), path, sid));
+            }
+            catch (InvalidOperationException)
+            {
+                staleRejected = true;
+            }
+            failures += Check(log, "confirmation for copy A cannot authorize overwriting concurrent copy C", staleRejected);
+            AutostartManager.RequireUnchanged(state, AutostartManager.Inspect(xml, path, sid));
+            return failures;
         }
 
         private static int SupplyStateCases(StringBuilder log)
@@ -231,6 +453,69 @@ namespace BatteryChargeMeter
             return failures;
         }
 
+        private static int PresentationCases(StringBuilder log)
+        {
+            // Exercise the actual window/tray consumer of the shared snapshot;
+            // pure selector tests alone cannot catch an old battery-only call site.
+            int failures = 0;
+            const System.Reflection.BindingFlags flags = System.Reflection.BindingFlags.Instance
+                | System.Reflection.BindingFlags.NonPublic;
+            Type formType = typeof(MainForm);
+            using (MainForm form = new MainForm(true))
+            {
+                BatteryReading battery = Battery(true, true, true, 39.08);
+                PowerSnapshot snapshot = new PowerSnapshot();
+                snapshot.Battery = battery;
+                snapshot.Timestamp = DateTimeOffset.Now;
+                snapshot.ElapsedSeconds = 1;
+                snapshot.BatteryTerminal = PowerSources.BatterySample(battery);
+                snapshot.Platform = PowerSample.FromValue(PowerBoundary.Platform,
+                    MeasurementKind.Measured, 27, "fixture", TimeSpan.FromSeconds(1));
+                snapshot.CpuPackage = PowerSample.FromValue(PowerBoundary.CpuPackage,
+                    MeasurementKind.Measured, 14.11, "fixture", TimeSpan.FromSeconds(1));
+                snapshot.WholeSystem = PowerSources.DeriveWholeSystem(snapshot.Platform, battery);
+                formType.GetField("latest", flags).SetValue(form, snapshot);
+                formType.GetField("displayMode", flags).SetValue(form, DisplayMode.WholeSystem);
+                System.Reflection.MethodInfo present = formType.GetMethod("PresentSnapshot", flags);
+                present.Invoke(form, new object[] { snapshot, true });
+                Label headline = (Label)formType.GetField("powerLabel", flags).GetValue(form);
+                Label whole = (Label)formType.GetField("wholeSystemValue", flags).GetValue(form);
+                NotifyIcon tray = (NotifyIcon)formType.GetField("trayIcon", flags).GetValue(form);
+                failures += Check(log, "charging window and tray display total, not battery or extra CPU",
+                    headline.Text == "≈ 66.08 W" && whole.Text == headline.Text
+                    && (string)formType.GetField("lastTrayGlyph", flags).GetValue(form) == "66"
+                    && tray.Text.Contains("估算整机输入功率") && tray.Text.Contains("≈ 66.08 W"));
+
+                formType.GetField("displayMode", flags).SetValue(form, DisplayMode.Battery);
+                snapshot.ElapsedSeconds = 2;
+                present.Invoke(form, new object[] { snapshot, true });
+                failures += Check(log, "battery mode changes actual headline and tray together",
+                    headline.Text == "39.08 W" && tray.Text.Contains("电池端净功率")
+                    && (string)formType.GetField("lastTrayGlyph", flags).GetValue(form) == "39");
+
+                formType.GetField("displayMode", flags).SetValue(form, DisplayMode.WholeSystem);
+                snapshot.Platform = PowerSample.Unsupported(PowerBoundary.Platform, "需要管理员权限");
+                snapshot.WholeSystem = PowerSources.DeriveWholeSystem(snapshot.Platform, battery);
+                snapshot.ElapsedSeconds = 3;
+                present.Invoke(form, new object[] { snapshot, true });
+                TextBox reason = (TextBox)formType.GetField("errorLabel", flags).GetValue(form);
+                failures += Check(log, "missing platform clears actual total and tray and shows reason",
+                    headline.Text == "N/A" && whole.Text == "N/A" && reason.Text.Contains("需要管理员权限")
+                    && (string)formType.GetField("lastTrayGlyph", flags).GetValue(form) == "--");
+
+                battery.SupplyState = BatterySupplyState.BatteryDischarging;
+                battery.PowerWatts = -17.5;
+                snapshot.BatteryTerminal = PowerSources.BatterySample(battery);
+                snapshot.WholeSystem = PowerSources.DeriveWholeSystem(snapshot.Platform, battery);
+                snapshot.ElapsedSeconds = 4;
+                present.Invoke(form, new object[] { snapshot, true });
+                failures += Check(log, "unplugged whole display works without platform or elevation",
+                    headline.Text == "17.50 W" && tray.Text.Contains("系统负载功率")
+                    && (string)formType.GetField("lastTrayGlyph", flags).GetValue(form) == "18");
+            }
+            return failures;
+        }
+
         private static int LayoutCases(StringBuilder log)
         {
             Size viewport = DpiLayout.ConstrainClientSize(
@@ -312,6 +597,8 @@ namespace BatteryChargeMeter
 
             int failures = Check(
                 log, "EMI counter regression requires a new baseline", !accepted);
+            failures += Check(log, "EMI long pause discards the counter interval",
+                !EmiSensor.TryCalculatePower(0, 1, 10000, 600000001, out watts, out window));
 
             RaplSampleTracker tracker = new RaplSampleTracker();
             PowerSample platform;

@@ -24,6 +24,10 @@ namespace BatteryChargeMeter
             using (PowerSources sources = new PowerSources())
             {
                 output.AppendLine("Power source discovery");
+                output.AppendLine("  Elevated token: " + Startup.IsElevated());
+                output.AppendLine("  Timestamp is application observation time, not a BMS timestamp.");
+                output.AppendLine("  Battery firmware window / BMS internal timestamp: unknown.");
+                output.AppendLine("  CPU EMI cross-check validates energy units, not Psys rail coverage or total accuracy.");
                 output.AppendLine("  CPU package (EMI): " + sources.CpuPackageStatus);
                 output.AppendLine("  Platform (PawnIO): " + sources.PlatformStatus);
                 output.AppendLine("  EMI channels: " + DescribeChannels(sources.EmiChannels));
@@ -49,26 +53,20 @@ namespace BatteryChargeMeter
                 {
                     Thread.Sleep(1000);
 
-                    BatteryReading battery;
-                    try
-                    {
-                        battery = BatterySensor.Read();
-                    }
-                    catch (Exception error)
-                    {
-                        output.AppendLine("battery read failed: " + error.Message);
-                        continue;
-                    }
-
-                    PowerSnapshot snapshot = sources.Read(battery);
+                    PowerSnapshot snapshot = sources.Capture();
+                    BatteryReading battery = snapshot.Battery;
+                    output.AppendLine(String.Format(CultureInfo.InvariantCulture,
+                        "timestamp={0:o}; elapsed={1:0.000}s; supply={2}; active_batteries={3}; battery_voltage={4}; battery_current_estimate={5}",
+                        snapshot.Timestamp, snapshot.ElapsedSeconds, battery.SupplyState, battery.ActiveBatteryCount,
+                        battery.VoltageAvailable ? battery.VoltageVolts.ToString("0.000", CultureInfo.InvariantCulture) + " V" : "n/a",
+                        battery.CurrentAvailable ? "≈ " + battery.CurrentAmps.ToString("0.000", CultureInfo.InvariantCulture) + " A" : "n/a"));
+                    foreach (string raw in battery.RawReadings) output.AppendLine("  raw battery: " + raw);
 
                     output.AppendLine(String.Format(
                         CultureInfo.InvariantCulture,
                         "{0,-7} {1,-14} {2,-14} {3,-14} {4}",
-                        second.ToString(CultureInfo.InvariantCulture) + "s",
-                        battery.RateAvailable
-                            ? battery.PowerWatts.ToString("0.00", CultureInfo.InvariantCulture)
-                            : "n/a",
+                        snapshot.ElapsedSeconds.ToString("0.000", CultureInfo.InvariantCulture) + "s",
+                        Describe(snapshot.BatteryTerminal),
                         Describe(snapshot.CpuPackage),
                         Describe(snapshot.Platform),
                         DescribeWholeSystem(snapshot.WholeSystem)));
@@ -83,7 +81,7 @@ namespace BatteryChargeMeter
             Thread.Sleep(1000);
             try
             {
-                sources.Read(BatterySensor.Read());
+                sources.Capture();
             }
             catch (Exception)
             {
@@ -123,7 +121,11 @@ namespace BatteryChargeMeter
             if (!sample.Available)
                 return "n/a (" + sample.UnavailableReason + ")";
 
-            return sample.Watts.ToString("0.00", CultureInfo.InvariantCulture);
+            return (sample.Kind == MeasurementKind.Estimated ? "≈ " : "")
+                + sample.Watts.ToString("0.00", CultureInfo.InvariantCulture)
+                + " [available=true; window=" + (sample.Window > TimeSpan.Zero
+                    ? sample.Window.TotalSeconds.ToString("0.000", CultureInfo.InvariantCulture) + "s" : "unknown")
+                + "; source=" + sample.Source + "]";
         }
     }
 }

@@ -1,12 +1,17 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Diagnostics;
 
 namespace BatteryChargeMeter
 {
     /// <summary>One tick's worth of power figures, each carrying its boundary.</summary>
     internal sealed class PowerSnapshot
     {
+        public DateTimeOffset Timestamp;
+        public double ElapsedSeconds;
+        public BatteryReading Battery;
+        public PowerSample BatteryTerminal;
         public PowerSample CpuPackage;
         public PowerSample Platform;
 
@@ -40,6 +45,25 @@ namespace BatteryChargeMeter
 
         private readonly EmiSensor emi = new EmiSensor();
         private readonly PawnIoSensor pawnIo = new PawnIoSensor();
+        private readonly Stopwatch clock = Stopwatch.StartNew();
+
+        public PowerSnapshot Capture()
+        {
+            BatteryReading battery;
+            try
+            {
+                battery = BatterySensor.Read();
+            }
+            catch (Exception error)
+            {
+                battery = new BatteryReading
+                {
+                    StatusUnavailableReason = error.Message,
+                    RateUnavailableReason = error.Message
+                };
+            }
+            return Read(battery);
+        }
 
         public string CpuPackageStatus
         {
@@ -70,6 +94,10 @@ namespace BatteryChargeMeter
         public PowerSnapshot Read(BatteryReading battery)
         {
             PowerSnapshot snapshot = new PowerSnapshot();
+            snapshot.Timestamp = DateTimeOffset.Now;
+            snapshot.ElapsedSeconds = clock.Elapsed.TotalSeconds;
+            snapshot.Battery = battery;
+            snapshot.BatteryTerminal = BatterySample(battery);
             snapshot.CpuPackage = emi.Read();
 
             PowerSample platform;
@@ -82,6 +110,15 @@ namespace BatteryChargeMeter
             snapshot.Platform = platform;
             snapshot.WholeSystem = DeriveWholeSystem(platform, battery);
             return snapshot;
+        }
+
+        internal static PowerSample BatterySample(BatteryReading battery)
+        {
+            if (battery == null || !battery.StatusAvailable || !battery.RateAvailable)
+                return PowerSample.Unsupported(PowerBoundary.BatteryTerminal, battery == null ? "电池状态不可用"
+                    : (!battery.StatusAvailable ? battery.StatusUnavailableReason : battery.RateUnavailableReason));
+            return PowerSample.FromValue(PowerBoundary.BatteryTerminal, MeasurementKind.Measured,
+                battery.PowerWatts, "WMI BatteryStatus；固件采样窗口与内部时间戳未知", TimeSpan.Zero);
         }
 
         /// <summary>

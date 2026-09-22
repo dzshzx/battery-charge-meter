@@ -46,4 +46,24 @@ Source: "{#LicensePath}"; DestDir: "{app}"; DestName: "LICENSE.LGPL-2.1.txt"; Fl
 Name: "{autoprograms}\Battery Charge Meter"; Filename: "{app}\BatteryChargeMeter.exe"
 
 [Run]
-Filename: "{app}\BatteryChargeMeter.exe"; Description: "Launch Battery Charge Meter"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\BatteryChargeMeter.exe"; Description: "Launch Battery Charge Meter (requests administrator access)"; Flags: nowait postinstall skipifsilent
+
+[Code]
+procedure InitializeUninstallProgressForm();
+var
+  ExitCode: Integer;
+  ExePath: String;
+begin
+  { Inno calls this after affirmative confirmation and before PerformUninstall.
+    Setup.Uninstall.pas re-raises exceptions from this event as fatal, so a
+    failed cleanup preserves the installed EXE and uninstall data. }
+  ExePath := ExpandConstant('{app}\BatteryChargeMeter.exe');
+  if FileExists(ExePath) then
+  begin
+    if not Exec(ExePath, '--remove-autostart', ExpandConstant('{app}'),
+      SW_HIDE, ewWaitUntilTerminated, ExitCode) then
+      RaiseException('Unable to start logon-task cleanup. Uninstall has been stopped; the application is still installed.')
+    else if ExitCode <> 0 then
+      RaiseException('Unable to remove this installation''s logon task. Uninstall has been stopped; disable its logon startup setting as administrator, then retry.');
+  end;
+end;

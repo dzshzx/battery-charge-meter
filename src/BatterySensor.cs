@@ -19,6 +19,7 @@ namespace BatteryChargeMeter
         public double VoltageVolts;
         public double CurrentAmps;
         public int Percentage = -1;
+        public readonly List<string> RawReadings = new List<string>();
 
         public BatterySupplyProfile SupplyProfile
         {
@@ -79,6 +80,9 @@ namespace BatteryChargeMeter
                         uint chargeRate = ReadUInt32(item, "ChargeRate");
                         uint dischargeRate = ReadUInt32(item, "DischargeRate");
                         uint voltage = ReadUInt32(item, "Voltage");
+                        reading.RawReadings.Add(String.Format(CultureInfo.InvariantCulture,
+                            "ChargeRate_mW={0}; DischargeRate_mW={1}; Voltage_mV={2}; PowerOnline={3}; Charging={4}; Discharging={5} (4294967295=unknown)",
+                            chargeRate, dischargeRate, voltage, powerOnline, charging, discharging));
 
                         ResolveRate(reading, chargeRate, dischargeRate);
                         ResolveElectricalDetails(reading, voltage);
@@ -132,6 +136,7 @@ namespace BatteryChargeMeter
 
             foreach (BatteryReading reading in readings)
             {
+                if (reading != null) combined.RawReadings.AddRange(reading.RawReadings);
                 if (reading == null || !reading.StatusAvailable)
                 {
                     inconsistent = true;

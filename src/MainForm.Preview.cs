@@ -114,7 +114,7 @@ namespace BatteryChargeMeter
                     "{0}; Form={1}x{2}; Client={3}x{4}; Content={5}x{6}; "
                         + "WindowRect={7}x{8}; FormFontPixels={9:0.###}; "
                         + "PowerFontPixels={10:0.###}; AutoScroll={11}; "
-                        + "WindowPositionApplied={12}; WindowPositionMatched={13}",
+                        + "WindowPositionApplied={12}; WindowPositionMatched={13}; ErrorArea={14}x{15}",
                     dpiMetadata,
                     Width,
                     Height,
@@ -128,7 +128,9 @@ namespace BatteryChargeMeter
                     powerLabel.Font.Size,
                     AutoScroll,
                     lastDpiWindowPositionApplied,
-                    positionMatched));
+                    positionMatched,
+                    errorLabel.Width,
+                    errorLabel.Height));
         }
 
         public void RenderTrayIconPreview(string path, string glyph, bool discharging)
