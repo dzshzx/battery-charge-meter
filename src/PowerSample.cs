@@ -48,6 +48,8 @@ namespace BatteryChargeMeter
             string source,
             TimeSpan window)
         {
+            if (Double.IsNaN(watts) || Double.IsInfinity(watts))
+                return Unsupported(boundary, "采样结果不是有限数值");
             PowerSample sample = new PowerSample();
             sample.Available = true;
             sample.Boundary = boundary;
@@ -64,6 +66,7 @@ namespace BatteryChargeMeter
             sample.Available = false;
             sample.Boundary = boundary;
             sample.UnavailableReason = reason;
+            sample.Kind = boundary == PowerBoundary.EstimatedSystemInput ? MeasurementKind.Estimated : MeasurementKind.Measured;
             return sample;
         }
 

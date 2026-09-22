@@ -145,6 +145,52 @@ try {
         throw 'Embedded third-party notices are incomplete.'
     }
 
+    # Invalid CLI arguments must exit, never fall through to the GUI/UAC path.
+    foreach ($invalidArguments in @(
+        '--unknown', '--self-test', '--power-probe', '--third-party-notices',
+        '--screenshot', '--dpi-preview', '--tray-preview', '--no-elevate extra'
+    )) {
+        $invalidProcess = Start-Process -FilePath $probeExe -ArgumentList $invalidArguments -PassThru
+        if (-not $invalidProcess.WaitForExit(5000)) {
+            $invalidProcess.Kill()
+            $invalidProcess.WaitForExit()
+            throw "Invalid CLI arguments opened a persistent process: $invalidArguments"
+        }
+        if ($invalidProcess.ExitCode -ne 2) {
+            throw "Invalid CLI arguments returned $($invalidProcess.ExitCode): $invalidArguments"
+        }
+    }
+
+    $powerReportPath = Join-Path $probeDir 'power-probe.txt'
+    $powerProcess = Start-Process -FilePath $probeExe `
+        -ArgumentList @('--power-probe', ('"{0}"' -f $powerReportPath), '1') -PassThru
+    if (-not $powerProcess.WaitForExit(20000)) {
+        $powerProcess.Kill()
+        $powerProcess.WaitForExit()
+        throw 'Power probe did not finish without interactive elevation.'
+    }
+    if ($powerProcess.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $powerReportPath)) {
+        throw 'Power probe did not create its report.'
+    }
+    $powerReport = Get-Content -LiteralPath $powerReportPath -Raw
+    foreach ($field in @('Elevated token:', 'timestamp=', 'elapsed=', 'supply=', 'BMS internal timestamp: unknown')) {
+        if (-not $powerReport.Contains($field)) {
+            throw "Power probe omitted diagnostic field: $field"
+        }
+    }
+
+    $screenPath = Join-Path $probeDir 'window-preview.png'
+    $screenProcess = Start-Process -FilePath $probeExe `
+        -ArgumentList @('--screenshot', ('"{0}"' -f $screenPath)) -PassThru
+    if (-not $screenProcess.WaitForExit(10000)) {
+        $screenProcess.Kill()
+        $screenProcess.WaitForExit()
+        throw 'Window preview did not exit without interactive elevation.'
+    }
+    if ($screenProcess.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $screenPath)) {
+        throw 'Window preview did not create its image.'
+    }
+
     $process = Start-Process `
         -FilePath $probeExe `
         -ArgumentList @('--tray-preview', ('"{0}"' -f $previewPath), '42', 'charging') `
@@ -181,9 +227,10 @@ try {
 
     $dpiMetadata = Get-Content -LiteralPath $dpiMetadataPath -Raw
     if ($dpiMetadata -notmatch 'HandledDpi=192(?=;|$)' -or
-        $dpiMetadata -notmatch 'Content=860x1000(?=;|$)' -or
+        $dpiMetadata -notmatch 'Content=860x1128(?=;|$)' -or
         $dpiMetadata -notmatch 'FormFontPixels=24(?:\.0+)?(?=;|$)' -or
-        $dpiMetadata -notmatch 'PowerFontPixels=112(?:\.0+)?(?=;|$)' -or
+        $dpiMetadata -notmatch 'PowerFontPixels=101\.333(?=;|$)' -or
+        $dpiMetadata -notmatch 'ErrorArea=780x90(?=;|$)' -or
         $dpiMetadata -notmatch 'AutoScroll=True(?=;|$)' -or
         $dpiMetadata -notmatch 'WindowPositionApplied=True(?=;|$)' -or
         $dpiMetadata -notmatch 'WindowPositionMatched=True(?=;|$)') {
@@ -192,7 +239,7 @@ try {
     if ($dpiMetadata -notmatch 'Client=(?<width>\d+)x(?<height>\d+)(?=;|$)') {
         throw "Missing DPI viewport metadata: $dpiMetadata"
     }
-    if ([int]$Matches.width -gt 860 -or [int]$Matches.height -gt 1000) {
+    if ([int]$Matches.width -gt 860 -or [int]$Matches.height -gt 1128) {
         throw "DPI viewport exceeds its scrollable content: $dpiMetadata"
     }
 
@@ -224,9 +271,10 @@ try {
 
     $dpiReturnMetadata = Get-Content -LiteralPath $dpiReturnMetadataPath -Raw
     if ($dpiReturnMetadata -notmatch 'HandledDpi=96(?=;|$)' -or
-        $dpiReturnMetadata -notmatch 'Content=430x500(?=;|$)' -or
+        $dpiReturnMetadata -notmatch 'Content=430x564(?=;|$)' -or
         $dpiReturnMetadata -notmatch 'FormFontPixels=12(?:\.0+)?(?=;|$)' -or
-        $dpiReturnMetadata -notmatch 'PowerFontPixels=56(?:\.0+)?(?=;|$)' -or
+        $dpiReturnMetadata -notmatch 'PowerFontPixels=50\.667(?=;|$)' -or
+        $dpiReturnMetadata -notmatch 'ErrorArea=390x45(?=;|$)' -or
         $dpiReturnMetadata -notmatch 'WindowPositionApplied=True(?=;|$)' -or
         $dpiReturnMetadata -notmatch 'WindowPositionMatched=True(?=;|$)') {
         throw "Unexpected DPI return metadata: $dpiReturnMetadata"
@@ -434,8 +482,13 @@ $selfTestDir = Join-Path ([IO.Path]::GetTempPath()) ([Guid]::NewGuid().ToString(
 New-Item -ItemType Directory -Path $selfTestDir | Out-Null
 try {
     $selfTestPath = Join-Path $selfTestDir 'self-test.txt'
-    $selfTestProcess = Start-Process -FilePath $artifacts[0].FullName `
-        -ArgumentList '--self-test', ('"{0}"' -f $selfTestPath) -Wait -PassThru
+    $selfTestProcess = Start-Process -FilePath $executableArtifact.FullName `
+        -ArgumentList '--self-test', ('"{0}"' -f $selfTestPath) -PassThru
+    if (-not $selfTestProcess.WaitForExit(15000)) {
+        $selfTestProcess.Kill()
+        $selfTestProcess.WaitForExit()
+        throw 'Power self test did not exit within 15 seconds.'
+    }
 
     if (-not (Test-Path -LiteralPath $selfTestPath)) {
         throw 'Power self test did not produce a report.'

@@ -46,4 +46,4 @@ Source: "{#LicensePath}"; DestDir: "{app}"; DestName: "LICENSE.LGPL-2.1.txt"; Fl
 Name: "{autoprograms}\Battery Charge Meter"; Filename: "{app}\BatteryChargeMeter.exe"
 
 [Run]
-Filename: "{app}\BatteryChargeMeter.exe"; Description: "Launch Battery Charge Meter"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\BatteryChargeMeter.exe"; Description: "Launch Battery Charge Meter (requests administrator access)"; Flags: nowait postinstall skipifsilent

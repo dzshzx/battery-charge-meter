@@ -275,7 +275,7 @@ namespace BatteryChargeMeter
     /// </summary>
     internal sealed class RaplSampleTracker
     {
-        private const double MaxSampleWindowSeconds = 10.0;
+        private const double MaxSampleWindowSeconds = PowerHistory.MaximumGap;
 
         private long previousTicks;
         private ulong previousPkg;
