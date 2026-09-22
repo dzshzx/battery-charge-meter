@@ -6,13 +6,14 @@ using System.Windows.Forms;
 namespace BatteryChargeMeter
 {
     /// <summary>
-    /// Source details render the same snapshot as the selected headline.
+    /// Source details render the same snapshot as the selected headline, as
+    /// four label-above-value stat columns.
     /// </summary>
     internal sealed partial class MainForm
     {
-        private const int SourceRowHeight = 20;
-        private const int FirstSourceRowY = 322;
-        private const int SourceRowSpacing = 19;
+        private const int SourceColumnWidth = 94;
+        private const int SourceNameY = 312;
+        private const int SourceValueY = 328;
 
         private readonly PowerSources powerSources = new PowerSources();
         private readonly ToolTip sourceTip = new ToolTip();
@@ -24,41 +25,40 @@ namespace BatteryChargeMeter
         private Label wholeSystemValue;
 
         /// <summary>
-        /// Builds the source rows. Called from the constructor before
+        /// Builds the source columns. Called from the constructor before
         /// <see cref="DpiLayout"/> captures the design bounds, so these controls
         /// scale with everything else.
         /// </summary>
         private void BuildPowerSourceRows()
         {
-            Label sectionTitle = NewLabel("POWER SOURCES", 20, 303, 200, 18, 8.5f, FontStyle.Bold);
-            sectionTitle.ForeColor = Color.FromArgb(100, 116, 139);
+            Label sectionTitle = NewLabel("功率来源", 24, 288, 160, 18, 9.5f, FontStyle.Bold);
+            sectionTitle.ForeColor = UiTheme.Ink;
             Controls.Add(sectionTitle);
 
             Label unusedName;
-            batteryValue = AddSourceRow(0, PowerSample.LabelFor(PowerBoundary.BatteryTerminal), out unusedName);
-            cpuPackageValue = AddSourceRow(
+            batteryValue = AddSourceColumn(0, PowerSample.LabelFor(PowerBoundary.BatteryTerminal), out unusedName);
+            cpuPackageValue = AddSourceColumn(
                 1, PowerSample.LabelFor(PowerBoundary.CpuPackage), out unusedName);
-            platformValue = AddSourceRow(
+            platformValue = AddSourceColumn(
                 2, PowerSample.LabelFor(PowerBoundary.Platform), out unusedName);
 
-            // The last row answers the whole-machine question, which is a
+            // The last column answers the whole-machine question, which is a
             // different boundary on battery than on external power, so its
             // caption is rewritten each tick from the sample itself.
-            wholeSystemValue = AddSourceRow(
+            wholeSystemValue = AddSourceColumn(
                 3, PowerSample.LabelFor(PowerBoundary.EstimatedSystemInput), out wholeSystemName);
         }
 
-        private Label AddSourceRow(int index, string caption, out Label nameLabel)
+        private Label AddSourceColumn(int index, string caption, out Label nameLabel)
         {
-            int y = FirstSourceRowY + (index * SourceRowSpacing);
+            int x = 24 + index * 99;
 
-            nameLabel = NewLabel(caption, 20, y, 190, SourceRowHeight, 9.5f, FontStyle.Regular);
-            nameLabel.ForeColor = Color.FromArgb(148, 163, 184);
+            nameLabel = NewLabel(caption, x, SourceNameY, SourceColumnWidth, 14, 8f, FontStyle.Regular);
+            nameLabel.ForeColor = UiTheme.Faint;
             Controls.Add(nameLabel);
 
-            Label value = NewLabel("--", 210, y, 200, SourceRowHeight, 9.5f, FontStyle.Bold);
-            value.TextAlign = ContentAlignment.MiddleRight;
-            value.ForeColor = Color.FromArgb(203, 213, 225);
+            Label value = NewLabel("--", x, SourceValueY, SourceColumnWidth, 18, 10f, FontStyle.Bold);
+            value.ForeColor = UiTheme.Ink;
             Controls.Add(value);
 
             return value;
@@ -105,7 +105,7 @@ namespace BatteryChargeMeter
             if (sample == null || !sample.Available)
             {
                 target.Text = "N/A";
-                target.ForeColor = Color.FromArgb(100, 116, 139);
+                target.ForeColor = UiTheme.Muted;
                 sourceTip.SetToolTip(
                     target,
                     sample == null ? "无数据" : sample.UnavailableReason);
@@ -118,8 +118,8 @@ namespace BatteryChargeMeter
 
             target.Text = text;
             target.ForeColor = sample.Kind == MeasurementKind.Estimated
-                ? Color.FromArgb(148, 163, 184)
-                : Color.FromArgb(203, 213, 225);
+                ? UiTheme.Muted
+                : UiTheme.Ink;
             sourceTip.SetToolTip(target, sample.Source);
         }
 
@@ -129,7 +129,7 @@ namespace BatteryChargeMeter
                 return;
 
             target.Text = "N/A";
-            target.ForeColor = Color.FromArgb(100, 116, 139);
+            target.ForeColor = UiTheme.Muted;
             sourceTip.SetToolTip(target, message);
         }
 

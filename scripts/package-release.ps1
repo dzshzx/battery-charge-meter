@@ -97,6 +97,7 @@ if ($includeInstaller) {
         "/DSourceExe=$resolvedExecutable",
         "/DNoticePath=$noticesPath",
         "/DLicensePath=$licenseSource",
+        "/DIconPath=$repoRoot\src\BatteryChargeMeter.ico",
         "/DOutputDir=$resolvedOutputDirectory",
         "/DOutputBaseFilename=$outputBaseFilename",
         $installerScript

@@ -12,6 +12,7 @@ $sourcePaths = @(
         Select-Object -ExpandProperty FullName
 )
 $manifestPath = Join-Path $sourceDir 'BatteryChargeMeter.manifest'
+$iconPath = Join-Path $sourceDir 'BatteryChargeMeter.ico'
 $outputPath = Join-Path $distDir 'BatteryChargeMeter.exe'
 # Embedded so the portable application remains self-contained. A same-named
 # file beside the EXE takes precedence at runtime; see third_party/NOTICE.md.
@@ -20,7 +21,7 @@ $noticePath = Join-Path $repoRoot 'third_party/NOTICE.md'
 $licensePath = Join-Path $repoRoot 'third_party/LICENSE.LGPL-2.1.txt'
 $expectedModuleHash = 'd6ed85d65ab17a22f813ef98207d6d537155ee2ded5976a21cb48413c9b92e5f'
 
-foreach ($resourcePath in @($modulePath, $noticePath, $licensePath)) {
+foreach ($resourcePath in @($modulePath, $noticePath, $licensePath, $iconPath)) {
     if (-not (Test-Path -LiteralPath $resourcePath)) {
         throw "Missing embedded resource: $resourcePath"
     }
@@ -52,6 +53,7 @@ $compilerArguments = @(
     '/target:winexe',
     '/optimize+',
     "/win32manifest:$manifestPath",
+    "/win32icon:$iconPath",
     "/resource:$modulePath,IntelMSR.bin",
     "/resource:$noticePath,THIRD_PARTY_NOTICE.md",
     "/resource:$licensePath,LGPL-2.1.txt",

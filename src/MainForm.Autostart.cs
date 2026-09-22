@@ -17,17 +17,18 @@ namespace BatteryChargeMeter
         private void BuildAutostartControls()
         {
             autostartCheckBox = new CheckBox();
-            autostartCheckBox.Text = "开机自启（登录后）";
+            autostartCheckBox.Text = "开机自启";
             autostartCheckBox.AutoSize = true;
-            autostartCheckBox.Location = new Point(83, 539);
-            autostartCheckBox.ForeColor = Color.FromArgb(203, 213, 225);
+            autostartCheckBox.Font = new Font("Segoe UI", 9f, FontStyle.Regular, GraphicsUnit.Point);
+            autostartCheckBox.Location = new Point(278, 18);
+            autostartCheckBox.ForeColor = UiTheme.Muted;
             autostartCheckBox.FlatStyle = FlatStyle.Flat;
             autostartCheckBox.CheckedChanged += delegate
             {
                 if (!updatingAutostart)
                     ChangeAutostart(autostartCheckBox.Checked);
             };
-            Controls.Add(autostartCheckBox);
+            footerBand.Controls.Add(autostartCheckBox);
             autostartMenuItem = new ToolStripMenuItem("开机自启（登录后）");
             autostartMenuItem.Click += delegate { ChangeAutostart(!autostartMenuItem.Checked); };
             trayMenu.Items.Insert(3, autostartMenuItem);

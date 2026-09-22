@@ -227,10 +227,10 @@ try {
 
     $dpiMetadata = Get-Content -LiteralPath $dpiMetadataPath -Raw
     if ($dpiMetadata -notmatch 'HandledDpi=192(?=;|$)' -or
-        $dpiMetadata -notmatch 'Content=860x1128(?=;|$)' -or
+        $dpiMetadata -notmatch 'Content=864x1000(?=;|$)' -or
         $dpiMetadata -notmatch 'FormFontPixels=24(?:\.0+)?(?=;|$)' -or
-        $dpiMetadata -notmatch 'PowerFontPixels=101\.333(?=;|$)' -or
-        $dpiMetadata -notmatch 'ErrorArea=780x90(?=;|$)' -or
+        $dpiMetadata -notmatch 'PowerFontPixels=88(?:\.0+)?(?=;|$)' -or
+        $dpiMetadata -notmatch 'ErrorArea=768x56(?=;|$)' -or
         $dpiMetadata -notmatch 'AutoScroll=True(?=;|$)' -or
         $dpiMetadata -notmatch 'WindowPositionApplied=True(?=;|$)' -or
         $dpiMetadata -notmatch 'WindowPositionMatched=True(?=;|$)') {
@@ -239,7 +239,7 @@ try {
     if ($dpiMetadata -notmatch 'Client=(?<width>\d+)x(?<height>\d+)(?=;|$)') {
         throw "Missing DPI viewport metadata: $dpiMetadata"
     }
-    if ([int]$Matches.width -gt 860 -or [int]$Matches.height -gt 1128) {
+    if ([int]$Matches.width -gt 864 -or [int]$Matches.height -gt 1000) {
         throw "DPI viewport exceeds its scrollable content: $dpiMetadata"
     }
 
@@ -271,10 +271,10 @@ try {
 
     $dpiReturnMetadata = Get-Content -LiteralPath $dpiReturnMetadataPath -Raw
     if ($dpiReturnMetadata -notmatch 'HandledDpi=96(?=;|$)' -or
-        $dpiReturnMetadata -notmatch 'Content=430x564(?=;|$)' -or
+        $dpiReturnMetadata -notmatch 'Content=432x500(?=;|$)' -or
         $dpiReturnMetadata -notmatch 'FormFontPixels=12(?:\.0+)?(?=;|$)' -or
-        $dpiReturnMetadata -notmatch 'PowerFontPixels=50\.667(?=;|$)' -or
-        $dpiReturnMetadata -notmatch 'ErrorArea=390x45(?=;|$)' -or
+        $dpiReturnMetadata -notmatch 'PowerFontPixels=44(?:\.0+)?(?=;|$)' -or
+        $dpiReturnMetadata -notmatch 'ErrorArea=384x28(?=;|$)' -or
         $dpiReturnMetadata -notmatch 'WindowPositionApplied=True(?=;|$)' -or
         $dpiReturnMetadata -notmatch 'WindowPositionMatched=True(?=;|$)') {
         throw "Unexpected DPI return metadata: $dpiReturnMetadata"
