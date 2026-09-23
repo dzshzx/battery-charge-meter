@@ -3,7 +3,7 @@
 Power Meter is displayed as 功率计 in Simplified Chinese. The executable and
 release assets use `PowerMeter`; the repository URL, settings key, installer
 AppId and logon-task ownership identity retain their existing values for
-compatibility. No release version is changed by this work.
+compatibility.
 
 The normal client area is 384 × 468 logical pixels. A centered 44-point reading
 leads, with the boundary caption above, followed by the supply state and battery
