@@ -1,10 +1,41 @@
 [CmdletBinding()]
-param()
+param(
+    [switch]$RequireInstaller,
+    [string]$ReportPath
+)
 
 $ErrorActionPreference = 'Stop'
 
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
 $distDir = Join-Path $repoRoot 'dist'
+if (-not $ReportPath) { $ReportPath = Join-Path $distDir 'test-report.json' }
+$started = Get-Date
+$stopwatch = [Diagnostics.Stopwatch]::StartNew()
+$phaseStarted = $stopwatch.Elapsed
+$phase = 'source-and-preparation'
+$checks = [ordered]@{
+    'source-and-preparation' = 'not-run'
+    'build' = 'not-run'
+    'portable-executable' = 'not-run'
+    'release-packaging-inputs' = 'not-run'
+    'real-installer-install-uninstall' = 'not-run'
+    'power-self-test' = 'not-run'
+    'autostart' = 'not-run'
+    'ui' = 'not-run'
+}
+$durations = [ordered]@{}
+$installerSkipReason = $null
+$failure = $null
+$installerCompilerVersion = $null
+$installerCompilerPath = $null
+$realInstallerCompilerPath = $null
+function Complete-Phase([string]$NextPhase) {
+    $script:checks[$script:phase] = 'passed'
+    $script:durations[$script:phase] = [math]::Round(($script:stopwatch.Elapsed - $script:phaseStarted).TotalSeconds, 3)
+    $script:phase = $NextPhase
+    $script:phaseStarted = $script:stopwatch.Elapsed
+}
+try {
 $manifestPath = Join-Path $repoRoot 'src\BatteryChargeMeter.manifest'
 $releaseWorkflowPath = Join-Path $repoRoot '.github\workflows\release.yml'
 $installerScriptPath = Join-Path $repoRoot 'installer\BatteryChargeMeter.iss'
@@ -68,6 +99,7 @@ if (Test-Path -LiteralPath $distDir) {
 New-Item -ItemType Directory -Path $distDir | Out-Null
 Set-Content -LiteralPath (Join-Path $distDir 'stale-build-output.txt') -Value 'stale'
 
+Complete-Phase 'build'
 & (Join-Path $PSScriptRoot 'build.ps1')
 
 $artifacts = @(
@@ -109,6 +141,7 @@ if ($targetFrameworkName -ne '.NETFramework,Version=v4.7') {
     throw "Expected .NET Framework 4.7 assembly metadata; found: $targetFrameworkName"
 }
 
+Complete-Phase 'portable-executable'
 $probeDir = Join-Path ([IO.Path]::GetTempPath()) (
     'battery-charge-meter-test-' + [Guid]::NewGuid().ToString('N')
 )
@@ -298,6 +331,7 @@ finally {
     }
 }
 
+Complete-Phase 'release-packaging-inputs'
 $packageDir = Join-Path ([IO.Path]::GetTempPath()) (
     'battery-charge-meter-package-test-' + [Guid]::NewGuid().ToString('N')
 )
@@ -305,15 +339,38 @@ $packageDir = Join-Path ([IO.Path]::GetTempPath()) (
 try {
     New-Item -ItemType Directory -Path $packageDir | Out-Null
     $installerCompilerPath = @(
-        (Get-Command 'ISCC.exe' -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -First 1),
         (Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'),
-        (Join-Path $env:ProgramFiles 'Inno Setup 6\ISCC.exe')
+        (Join-Path $env:ProgramFiles 'Inno Setup 6\ISCC.exe'),
+        (Get-Command 'ISCC.exe' -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -First 1)
     ) | Where-Object { $_ -and (Test-Path -LiteralPath $_) } | Select-Object -First 1
     $usingRealInstallerCompiler = [bool]$installerCompilerPath
+    $realInstallerCompilerPath = $installerCompilerPath
     if ($usingRealInstallerCompiler) {
+        # ISCC.exe's Windows version resource can be 0.0.0.0. Query its own
+        # preprocessor instead, so a Chocolatey shim cannot supply the version.
+        $versionProbePath = Join-Path $packageDir 'compiler-version.iss'
+        @'
+#pragma message "ISCC_VERSION_PACKED=" + Str(Ver)
+[Setup]
+AppName=CompilerVersionProbe
+AppVersion=1
+DefaultDirName={autopf}\CompilerVersionProbe
+'@ | Set-Content -LiteralPath $versionProbePath -Encoding utf8
+        $versionOutput = (& $installerCompilerPath '/O-' $versionProbePath 2>&1 | Out-String)
+        if ($LASTEXITCODE -ne 0 -or $versionOutput -notmatch 'ISCC_VERSION_PACKED=(?<version>\d+)') {
+            throw "Inno Setup compiler version probe failed: $versionOutput"
+        }
+        $packedVersion = [long]$Matches.version
+        $installerCompilerVersion = '{0}.{1}.{2}.{3}' -f `
+            (($packedVersion -shr 24) -band 255),
+            (($packedVersion -shr 16) -band 255),
+            (($packedVersion -shr 8) -band 255),
+            ($packedVersion -band 255)
         Write-Host "Installer verification: real Inno Setup compiler ($installerCompilerPath), including install/uninstall."
     } else {
-        Write-Host 'Installer verification: packaging inputs only; Inno Setup is unavailable.'
+        $installerSkipReason = 'Inno Setup ISCC.exe is unavailable; real installer creation and per-user install/uninstall were not executed.'
+        if ($RequireInstaller) { throw $installerSkipReason }
+        Write-Warning $installerSkipReason
     }
 
     if (-not $installerCompilerPath) {
@@ -425,10 +482,17 @@ Set-Content -LiteralPath (Join-Path $outputDirectory "$outputBaseName.exe") -Val
         throw 'Portable-only packaging did not honor the selected Release format.'
     }
 
+    Complete-Phase 'real-installer-install-uninstall'
     if ($usingRealInstallerCompiler) {
         & (Join-Path $PSScriptRoot 'test-installer-uninstall.ps1') `
             -InstallerCompilerPath $installerCompilerPath `
             -ExecutablePath $executableArtifact.FullName
+        Complete-Phase 'power-self-test'
+    } else {
+        $checks['real-installer-install-uninstall'] = 'not-run'
+        $durations['real-installer-install-uninstall'] = 0
+        $phase = 'power-self-test'
+        $phaseStarted = $stopwatch.Elapsed
     }
 }
 finally {
@@ -468,8 +532,62 @@ finally {
     Remove-Item -LiteralPath $selfTestDir -Recurse -Force -ErrorAction SilentlyContinue
 }
 
+Complete-Phase 'autostart'
 & (Join-Path $PSScriptRoot 'test-autostart.ps1') -Executable $executableArtifact.FullName -GuiOnly
 
+Complete-Phase 'ui'
 & (Join-Path $PSScriptRoot 'test-ui.ps1') -Executable $executableArtifact.FullName
 
-Write-Host 'Application and Release package tests passed.'
+Complete-Phase ''
+if ($installerSkipReason) {
+    Write-Warning 'Application checks and packaging-input checks passed; real installer acceptance was not executed.'
+} else {
+    Write-Host 'Application and Release package tests passed, including real installer install/uninstall.'
+}
+}
+catch {
+    $failure = $_.Exception.Message
+    if ($phase -and $checks[$phase] -eq 'not-run') {
+        $checks[$phase] = 'failed'
+        $durations[$phase] = [math]::Round(($stopwatch.Elapsed - $phaseStarted).TotalSeconds, 3)
+    }
+    throw
+}
+finally {
+    $stopwatch.Stop()
+    $commit = (& git -C $repoRoot rev-parse HEAD 2>$null | Select-Object -First 1)
+    $frameworkRelease = $null
+    try { $frameworkRelease = (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full' -ErrorAction Stop).Release } catch {}
+    $frameworkVersion = if ($frameworkRelease -ge 533320) { '4.8.1' }
+        elseif ($frameworkRelease -ge 528040) { '4.8' }
+        elseif ($frameworkRelease -ge 461808) { '4.7.2' }
+        elseif ($frameworkRelease -ge 461308) { '4.7.1' }
+        elseif ($frameworkRelease -ge 460798) { '4.7' }
+        else { 'unknown' }
+    $preparationSeconds = [double]$durations['source-and-preparation']
+    $buildSeconds = [double]$durations['build']
+    $report = [ordered]@{
+        commit = $commit
+        started_at = $started.ToString('o')
+        os = [Runtime.InteropServices.RuntimeInformation]::OSDescription
+        powershell = $PSVersionTable.PSVersion.ToString()
+        dotnet_framework_version = $frameworkVersion
+        dotnet_framework_release = $frameworkRelease
+        target_framework = '.NETFramework,Version=v4.7'
+        inno_setup = [ordered]@{ path = $realInstallerCompilerPath; version = $installerCompilerVersion }
+        scope = if ($RequireInstaller) { 'strict-real-installer' } else { 'local-optional-installer' }
+        result = if ($failure) { 'failed' } elseif ($installerSkipReason) { 'partial-installer-not-run' } else { 'passed' }
+        checks = $checks
+        phase_seconds = $durations
+        preparation_seconds = $preparationSeconds
+        build_seconds = $buildSeconds
+        test_seconds = [math]::Round(($stopwatch.Elapsed.TotalSeconds - $preparationSeconds - $buildSeconds), 3)
+        total_seconds = [math]::Round($stopwatch.Elapsed.TotalSeconds, 3)
+        installer_not_run_reason = $installerSkipReason
+        failure = $failure
+    }
+    $reportDir = Split-Path -Parent $ReportPath
+    if ($reportDir) { New-Item -ItemType Directory -Path $reportDir -Force | Out-Null }
+    $report | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $ReportPath -Encoding utf8
+    Write-Host "Verification report: $ReportPath"
+}

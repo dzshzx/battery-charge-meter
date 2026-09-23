@@ -195,6 +195,13 @@ EXE manifest 继续使用 `asInvoker`，由界面启动流程主动请求提权�
 .\scripts\build.ps1
 ```
 
+从 Windows 本地路径运行 `pwsh -NoProfile -File .\scripts\test.ps1` 进行自动验证。
+若没有 Inno Setup，脚本继续检查便携版与打包输入，并在 `dist/test-report.json`
+明确记录真实安装包安装/卸载验收未执行。CI 与 Release 使用
+`-RequireInstaller`，缺少 Inno Setup 即失败；报告包含 commit、宿主和工具版本、
+各项结果与耗时，并作为工作流 artifact 保存。真实电池状态、已安装驱动和管理员
+启动的宿主验收见 `docs/testing/host-acceptance.md`。
+
 脚本使用 Windows 自带的 .NET Framework C# 编译器，将应用 EXE 写入 `dist/`。
 首次构建会从 NuGet 下载固定的 AntdUI 2.4.11 并校验 SHA-256，后续复用
 `.packages/` 中的已校验归档。其 net46 程序集内嵌在 EXE 中，运行时无需旁置 UI DLL
