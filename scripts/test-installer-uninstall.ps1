@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [Parameter(Mandatory)][string]$InstallerCompilerPath,
     [Parameter(Mandatory)][string]$ExecutablePath
@@ -129,7 +129,7 @@ try {
     New-Item -ItemType Directory -Path $root | Out-Null
     # Only identities change in this fixture; the shipped uninstall hook is
     # compiled verbatim. Never install with the real AppId or Start Menu name.
-    $iss = Get-Content (Join-Path $repo 'installer\BatteryChargeMeter.iss') -Raw
+    $iss = Get-Content (Join-Path $repo 'installer\BatteryChargeMeter.iss') -Raw -Encoding UTF8
     $iss = $iss.Replace('AppId={{FDDC9FC9-109E-4B41-AE4A-BA30420295D0}', "AppId=$appId")
     $iss = $iss.Replace('Name: "{autoprograms}\{cm:ApplicationName}";', ('Name: "{{autoprograms}}\{0}";' -f $shortcutName))
     Assert-Installer ($iss.Contains("AppId=$appId") -and $iss.Contains($shortcutName)) 'fixture has isolated installer identities'

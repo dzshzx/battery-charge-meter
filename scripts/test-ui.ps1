@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [string]$Executable = (Join-Path $PSScriptRoot '..\dist\PowerMeter.exe'),
     [string]$OutputDirectory = (Join-Path $PSScriptRoot '..\dist\ui-preview')
