@@ -4,7 +4,7 @@
     version="1.4.0.0"
     name="BatteryChargeMeter.app"
     processorArchitecture="*" />
-  <description>Battery Charge Meter</description>
+  <description>Power Meter</description>
   <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">
     <security>
       <requestedPrivileges>

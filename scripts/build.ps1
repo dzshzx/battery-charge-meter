@@ -13,7 +13,7 @@ $sourcePaths = @(
 )
 $manifestPath = Join-Path $sourceDir 'BatteryChargeMeter.manifest'
 $iconPath = Join-Path $sourceDir 'BatteryChargeMeter.ico'
-$outputPath = Join-Path $distDir 'BatteryChargeMeter.exe'
+$outputPath = Join-Path $distDir 'PowerMeter.exe'
 # Embedded so the portable application remains self-contained. A same-named
 # file beside the EXE takes precedence at runtime; see third_party/NOTICE.md.
 $modulePath = Join-Path $repoRoot 'third_party/IntelMSR.bin'
@@ -70,6 +70,11 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 $artifact = Get-Item -LiteralPath $outputPath
+$compatDir = Join-Path $distDir 'compat'
+New-Item -ItemType Directory -Path $compatDir | Out-Null
+& $compilerPath /nologo /target:winexe /optimize+ "/win32manifest:$manifestPath" "/win32icon:$iconPath" `
+    "/out:$compatDir\BatteryChargeMeter.exe" (Join-Path $repoRoot 'installer\LegacyLauncher.cs')
+if ($LASTEXITCODE -ne 0) { throw 'Legacy launcher compilation failed.' }
 $hash = Get-FileHash -Algorithm SHA256 -LiteralPath $outputPath
 
 Write-Host "Built: $($artifact.FullName)"

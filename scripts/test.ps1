@@ -53,7 +53,7 @@ foreach ($requiredFragment in @(
 $installerScript = Get-Content -LiteralPath $installerScriptPath -Raw
 foreach ($requiredFragment in @(
     'PrivilegesRequired=lowest',
-    'DestName: "BatteryChargeMeter.exe"',
+    'DestName: "PowerMeter.exe"',
     'DestName: "THIRD-PARTY-NOTICES.txt"',
     'DestName: "LICENSE.LGPL-2.1.txt"'
 )) {
@@ -75,9 +75,9 @@ $artifacts = @(
         Sort-Object -Property Name
 )
 
-$executableArtifacts = @($artifacts | Where-Object Name -eq 'BatteryChargeMeter.exe')
+$executableArtifacts = @($artifacts | Where-Object Name -eq 'PowerMeter.exe')
 if ($executableArtifacts.Count -ne 1) {
-    throw 'The build must produce BatteryChargeMeter.exe.'
+    throw 'The build must produce PowerMeter.exe.'
 }
 if (Test-Path -LiteralPath (Join-Path $distDir 'stale-build-output.txt')) {
     throw 'The build did not clean stale output.'
@@ -119,7 +119,7 @@ $embeddedNoticesBytes = $null
 
 try {
     New-Item -ItemType Directory -Path $probeDir | Out-Null
-    $probeExe = Join-Path $probeDir 'BatteryChargeMeter.exe'
+    $probeExe = Join-Path $probeDir 'PowerMeter.exe'
     $previewPath = Join-Path $probeDir 'tray-preview.png'
     Copy-Item -LiteralPath $executableArtifact.FullName -Destination $probeExe
 
@@ -227,10 +227,10 @@ try {
 
     $dpiMetadata = Get-Content -LiteralPath $dpiMetadataPath -Raw
     if ($dpiMetadata -notmatch 'HandledDpi=192(?=;|$)' -or
-        $dpiMetadata -notmatch 'Content=864x1000(?=;|$)' -or
+        $dpiMetadata -notmatch 'Content=840x(?:896|1016)(?=;|$)' -or
         $dpiMetadata -notmatch 'FormFontPixels=24(?:\.0+)?(?=;|$)' -or
-        $dpiMetadata -notmatch 'PowerFontPixels=88(?:\.0+)?(?=;|$)' -or
-        $dpiMetadata -notmatch 'ErrorArea=768x56(?=;|$)' -or
+        $dpiMetadata -notmatch 'PowerFontPixels=85\.333(?=;|$)' -or
+        $dpiMetadata -notmatch 'ErrorArea=760x96(?=;|$)' -or
         $dpiMetadata -notmatch 'AutoScroll=True(?=;|$)' -or
         $dpiMetadata -notmatch 'WindowPositionApplied=True(?=;|$)' -or
         $dpiMetadata -notmatch 'WindowPositionMatched=True(?=;|$)') {
@@ -239,7 +239,7 @@ try {
     if ($dpiMetadata -notmatch 'Client=(?<width>\d+)x(?<height>\d+)(?=;|$)') {
         throw "Missing DPI viewport metadata: $dpiMetadata"
     }
-    if ([int]$Matches.width -gt 864 -or [int]$Matches.height -gt 1000) {
+    if ([int]$Matches.width -gt 840 -or [int]$Matches.height -gt 1016) {
         throw "DPI viewport exceeds its scrollable content: $dpiMetadata"
     }
 
@@ -271,10 +271,10 @@ try {
 
     $dpiReturnMetadata = Get-Content -LiteralPath $dpiReturnMetadataPath -Raw
     if ($dpiReturnMetadata -notmatch 'HandledDpi=96(?=;|$)' -or
-        $dpiReturnMetadata -notmatch 'Content=432x500(?=;|$)' -or
+        $dpiReturnMetadata -notmatch 'Content=420x(?:448|508)(?=;|$)' -or
         $dpiReturnMetadata -notmatch 'FormFontPixels=12(?:\.0+)?(?=;|$)' -or
-        $dpiReturnMetadata -notmatch 'PowerFontPixels=44(?:\.0+)?(?=;|$)' -or
-        $dpiReturnMetadata -notmatch 'ErrorArea=384x28(?=;|$)' -or
+        $dpiReturnMetadata -notmatch 'PowerFontPixels=42\.667(?=;|$)' -or
+        $dpiReturnMetadata -notmatch 'ErrorArea=380x48(?=;|$)' -or
         $dpiReturnMetadata -notmatch 'WindowPositionApplied=True(?=;|$)' -or
         $dpiReturnMetadata -notmatch 'WindowPositionMatched=True(?=;|$)') {
         throw "Unexpected DPI return metadata: $dpiReturnMetadata"
@@ -347,11 +347,11 @@ Set-Content -LiteralPath (Join-Path $outputDirectory "$outputBaseName.exe") -Val
         -Formats @('Portable', 'Installer') `
         -InstallerCompilerPath $installerCompilerPath
 
-    $expectedBinaryName = 'BatteryChargeMeter-v9.8.7-windows.exe'
+    $expectedBinaryName = 'PowerMeter-v9.8.7-windows.exe'
     $expectedChecksumName = "$expectedBinaryName.sha256"
-    $expectedInstallerName = 'BatteryChargeMeter-v9.8.7-windows-setup.exe'
+    $expectedInstallerName = 'PowerMeter-v9.8.7-windows-setup.exe'
     $expectedInstallerChecksumName = "$expectedInstallerName.sha256"
-    $expectedNoticesName = 'BatteryChargeMeter-THIRD-PARTY-NOTICES.txt'
+    $expectedNoticesName = 'PowerMeter-THIRD-PARTY-NOTICES.txt'
     $expectedSourceName = 'PawnIO.Modules-0.2.10-source.zip'
     if ((Split-Path -Leaf $package.BinaryPath) -ne $expectedBinaryName) {
         throw "Unexpected Release binary name: $($package.BinaryPath)"
@@ -469,5 +469,7 @@ finally {
 }
 
 & (Join-Path $PSScriptRoot 'test-autostart.ps1') -Executable $executableArtifact.FullName -GuiOnly
+
+& (Join-Path $PSScriptRoot 'test-ui.ps1') -Executable $executableArtifact.FullName
 
 Write-Host 'Application and Release package tests passed.'

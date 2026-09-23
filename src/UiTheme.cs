@@ -10,13 +10,14 @@ namespace BatteryChargeMeter
     /// </summary>
     internal static class UiTheme
     {
+        internal const string TextFont = "Microsoft YaHei UI";
         internal static readonly Color Surface = Color.White;
         internal static readonly Color FooterBand = Color.FromArgb(247, 248, 249);
         internal static readonly Color Hairline = Color.FromArgb(236, 236, 236);
         internal static readonly Color FooterRule = Color.FromArgb(229, 229, 229);
         internal static readonly Color Ink = Color.FromArgb(27, 27, 27);
         internal static readonly Color Muted = Color.FromArgb(97, 97, 97);
-        internal static readonly Color Faint = Color.FromArgb(140, 140, 140);
+        internal static readonly Color Faint = Color.FromArgb(112, 112, 112);
         internal static readonly Color Track = Color.FromArgb(234, 234, 234);
         internal static readonly Color ZeroLine = Color.FromArgb(200, 200, 200);
         internal static readonly Color Chip = Color.FromArgb(234, 236, 238);
@@ -57,6 +58,26 @@ namespace BatteryChargeMeter
                     return TrayNeutral;
             }
         }
+
+        internal static string SupplyCaption(BatterySupplyState state)
+        {
+            return Strings.Get(SupplyCaptionKey(state));
+        }
+
+        private static string SupplyCaptionKey(BatterySupplyState state)
+        {
+            switch (state)
+            {
+                case BatterySupplyState.ExternalPowerIdle: return "已接电源 · 未充电";
+                case BatterySupplyState.ExternalPowerCharging: return "已接电源 · 充电中";
+                case BatterySupplyState.ExternalPowerSupplemented: return "已接电源 · 电池补充";
+                case BatterySupplyState.ExternalPowerDirectionUnknown: return "已接电源 · 状态未知";
+                case BatterySupplyState.BatteryDischarging: return "电池供电 · 放电中";
+                case BatterySupplyState.BatteryDirectionUnknown: return "电池供电 · 速率未知";
+                case BatterySupplyState.Inconsistent: return "电池状态异常";
+                default: return "电池不可用";
+            }
+        }
     }
 
     internal static class WidgetPath
@@ -64,6 +85,11 @@ namespace BatteryChargeMeter
         internal static GraphicsPath Rounded(Rectangle bounds, int radius)
         {
             GraphicsPath path = new GraphicsPath();
+            if (radius <= 0)
+            {
+                path.AddRectangle(bounds);
+                return path;
+            }
             int diameter = radius * 2;
             path.AddArc(bounds.X, bounds.Y, diameter, diameter, 180, 90);
             path.AddArc(bounds.Right - diameter, bounds.Y, diameter, diameter, 270, 90);

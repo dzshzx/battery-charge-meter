@@ -15,12 +15,12 @@ $ExecutablePath = (Resolve-Path -LiteralPath $ExecutablePath).Path
 $id = [Guid]::NewGuid().ToString('N')
 $root = Join-Path ([IO.Path]::GetTempPath()) "bcm-installer-$id"
 $installDir = Join-Path $root 'installed'
-$installedExe = Join-Path $installDir 'BatteryChargeMeter.exe'
+$installedExe = Join-Path $installDir 'PowerMeter.exe'
 $uninstaller = Join-Path $installDir 'unins000.exe'
 $receipt = Join-Path $root 'cleanup-called.txt'
 $failureFlag = Join-Path $root 'force-cleanup-failure'
 $taskName = "BatteryChargeMeter.InstallerTest.$id"
-$appId = "BatteryChargeMeter.InstallerTest.$id"
+$appId = "PowerMeterTest.$id"
 $shortcutName = "Battery Charge Meter Installer Test $id"
 $shortcut = Join-Path ([Environment]::GetFolderPath('Programs')) "$shortcutName.lnk"
 $registryPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\${appId}_is1"
@@ -131,9 +131,10 @@ try {
     # compiled verbatim. Never install with the real AppId or Start Menu name.
     $iss = Get-Content (Join-Path $repo 'installer\BatteryChargeMeter.iss') -Raw
     $iss = $iss.Replace('AppId={{FDDC9FC9-109E-4B41-AE4A-BA30420295D0}', "AppId=$appId")
-    $iss = $iss.Replace('Name: "{autoprograms}\Battery Charge Meter";', ('Name: "{{autoprograms}}\{0}";' -f $shortcutName))
+    $iss = $iss.Replace('Name: "{autoprograms}\{cm:ApplicationName}";', ('Name: "{{autoprograms}}\{0}";' -f $shortcutName))
     Assert-Installer ($iss.Contains("AppId=$appId") -and $iss.Contains($shortcutName)) 'fixture has isolated installer identities'
     $issPath = Join-Path $root 'fixture.iss'
+    $iss = '#define ChineseMessages "' + $repo + '\installer\Languages\ChineseSimplified.isl"' + [Environment]::NewLine + $iss
     Set-Content -LiteralPath $issPath -Value $iss -Encoding UTF8
 
     # The fixture entry point routes cleanup to the shipping manager with a
@@ -171,23 +172,42 @@ class InstallerCleanupFixture {
     Set-Content -LiteralPath $fixtureSource -Value $code -Encoding UTF8
     & "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe" /nologo /target:winexe "/out:$fixtureExe" $fixtureSource
     if ($LASTEXITCODE -ne 0) { throw 'Cleanup fixture compilation failed.' }
-    & $InstallerCompilerPath '/Q' '/DAppVersion=9.8.7' "/DSourceExe=$fixtureExe" "/DNoticePath=$repo\third_party\NOTICE.md" "/DLicensePath=$repo\third_party\LICENSE.LGPL-2.1.txt" "/DOutputDir=$root" '/DOutputBaseFilename=fixture-setup' $issPath
+    & $InstallerCompilerPath '/Q' '/DAppVersion=9.8.7' "/DSourceExe=$fixtureExe" "/DLegacyLauncher=$repo\dist\compat\BatteryChargeMeter.exe" "/DNoticePath=$repo\third_party\NOTICE.md" "/DLicensePath=$repo\third_party\LICENSE.LGPL-2.1.txt" "/DOutputDir=$root" '/DOutputBaseFilename=fixture-setup' $issPath
     if ($LASTEXITCODE -ne 0) { throw 'Real installer compilation failed.' }
-    $setup = Start-Process (Join-Path $root 'fixture-setup.exe') -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', ('/DIR="{0}"' -f $installDir)) -Wait -PassThru
+    $setup = Start-Process (Join-Path $root 'fixture-setup.exe') -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/LANG=en', ('/LOG="{0}"' -f (Join-Path $root 'install.log')), ('/DIR="{0}"' -f $installDir)) -Wait -PassThru
     if ($setup.ExitCode -ne 0) { throw "Isolated install failed: $($setup.ExitCode)" }
     $installed = $true
-    foreach ($name in @('BatteryChargeMeter.exe', 'THIRD-PARTY-NOTICES.txt', 'LICENSE.LGPL-2.1.txt', 'unins000.exe', 'unins000.dat')) {
+    foreach ($name in @('PowerMeter.exe', 'THIRD-PARTY-NOTICES.txt', 'LICENSE.LGPL-2.1.txt', 'unins000.exe', 'unins000.dat')) {
         Assert-Installer (Test-Path -LiteralPath (Join-Path $installDir $name)) "installer provides $name"
     }
+    $legacyExe = Join-Path $installDir 'BatteryChargeMeter.exe'
+    Assert-Installer (-not (Test-Path -LiteralPath $legacyExe)) 'fresh install uses only the new executable name'
+    $installedName = (Get-ItemProperty $registryPath).DisplayName
+    Assert-Installer ($installedName -eq 'Power Meter') "English installer uses Power Meter branding: $installedName"
+    # Simulate an upgrade in the same AppId and directory. Its existing logon
+    # task must remain byte-for-byte unchanged while its old action still works.
+    Copy-Item -LiteralPath $fixtureExe -Destination $legacyExe
     $app = [Reflection.Assembly]::LoadFile($ExecutablePath)
     $type = $app.GetType('BatteryChargeMeter.AutostartManager', $true)
-    $xml = $type.GetMethod('BuildXml', [Reflection.BindingFlags]'Static,NonPublic').Invoke($null, [object[]]@([string]$installedExe, [string]$sid))
+    $xml = $type.GetMethod('BuildXml', [Reflection.BindingFlags]'Static,NonPublic').Invoke($null, [object[]]@([string]$legacyExe, [string]$sid))
     # A disabled, least-privilege fixture is registrable by an ordinary CI
     # account and can never execute on login. Disable() still verifies its
     # production ownership marker, exact executable, SID and action arguments.
     $xml = $xml.Replace('HighestAvailable', 'LeastPrivilege').Replace('<Enabled>true</Enabled>', '<Enabled>false</Enabled>')
     $folder.RegisterTask($taskName, $xml, 2, $sid, $null, 3, $null) | Out-Null
     $before = $folder.GetTask($taskName).Xml
+    $upgrade = Start-Process (Join-Path $root 'fixture-setup.exe') -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/LANG=zhCN', ('/DIR="{0}"' -f $installDir)) -Wait -PassThru
+    Assert-Installer ($upgrade.ExitCode -eq 0) 'Chinese upgrade completes in the existing installation'
+    Assert-Installer ((Get-ItemProperty $registryPath).DisplayName -eq '功率计') 'Chinese installer uses localized branding'
+    Assert-Installer ([Diagnostics.FileVersionInfo]::GetVersionInfo($legacyExe).FileDescription -eq 'Power Meter legacy launcher') 'upgrade replaces the old executable with the compatibility launcher'
+    Assert-Installer ($folder.GetTask($taskName).Xml -eq $before) 'upgrade preserves the legacy logon task and its policy'
+    $aliasMethod = $type.GetMethod('IsCurrentCopy', [Reflection.BindingFlags]'Static,NonPublic')
+    Assert-Installer ($aliasMethod.Invoke($null, [object[]]@([string]$legacyExe, [string]$installedExe))) 'new application recognizes its installed legacy launcher'
+    Assert-Installer (-not $aliasMethod.Invoke($null, [object[]]@([string]$legacyExe, [string]$ExecutablePath))) 'another portable copy cannot claim the legacy task'
+    Set-Content -LiteralPath $failureFlag -Value 'injected nonzero cleanup result'
+    $legacyCleanup = Start-Process $legacyExe -ArgumentList '--remove-autostart' -Wait -PassThru
+    Assert-Installer ($legacyCleanup.ExitCode -eq 1 -and (Test-Path -LiteralPath $receipt)) 'legacy launcher forwards cleanup and preserves its failure code'
+    Remove-Item -LiteralPath $failureFlag, $receipt
     $cancelCode = Start-Uninstall 7 'cancel.log'
     Assert-Installer (-not (Test-Path -LiteralPath $receipt)) 'cancel never invokes startup cleanup'
     Assert-Installer ($folder.GetTask($taskName).Xml -eq $before) 'cancel preserves the actual task unchanged'

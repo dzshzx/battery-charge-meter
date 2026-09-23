@@ -86,7 +86,7 @@ jobs:
           $tag = '${{ steps.version.outputs.tag }}'
           $package = ./scripts/package-release.ps1 `
             -Tag $tag `
-            -ExecutablePath 'dist/BatteryChargeMeter.exe' `
+            -ExecutablePath 'dist/PowerMeter.exe' `
             -OutputDirectory $env:RUNNER_TEMP `
             -Formats 'Portable', 'Installer'
 

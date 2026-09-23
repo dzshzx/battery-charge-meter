@@ -12,6 +12,8 @@ using System.Windows.Forms;
 [assembly: System.Runtime.Versioning.TargetFramework(
     ".NETFramework,Version=v4.7",
     FrameworkDisplayName = ".NET Framework 4.7")]
+[assembly: System.Reflection.AssemblyTitle("Power Meter")]
+[assembly: System.Reflection.AssemblyProduct("Power Meter")]
 
 namespace BatteryChargeMeter
 {
@@ -246,16 +248,16 @@ namespace BatteryChargeMeter
         {
             trayEnabled = enableTray;
             startHidden = hidden;
-            Text = "Battery Charge Meter";
+            Text = Strings.AppName;
             AutoScaleMode = AutoScaleMode.None;
             AutoScroll = true;
-            ClientSize = new Size(432, 500);
+            ClientSize = new Size(420, 508);
             FormBorderStyle = FormBorderStyle.FixedSingle;
             MaximizeBox = false;
             StartPosition = FormStartPosition.CenterScreen;
             BackColor = UiTheme.Surface;
             ForeColor = UiTheme.Ink;
-            Font = new Font("Segoe UI", 9f, FontStyle.Regular, GraphicsUnit.Point);
+            Font = new Font(UiTheme.TextFont, 9f, FontStyle.Regular, GraphicsUnit.Point);
             TopMost = true;
             try
             {
@@ -266,78 +268,77 @@ namespace BatteryChargeMeter
                 // A build without the embedded icon keeps the stock window icon.
             }
 
-            title = NewLabel("估算整机输入功率", 24, 16, 240, 20, 10f, FontStyle.Bold);
+            title = NewLabel("估算整机输入功率", 20, 16, 230, 22, 10f, FontStyle.Bold);
             title.ForeColor = UiTheme.Ink;
 
-            stateLabel = NewLabel("READING...", 264, 18, 144, 18, 8.5f, FontStyle.Bold);
+            stateLabel = NewLabel("正在读取", 250, 16, 150, 22, 8.5f, FontStyle.Regular);
             stateLabel.TextAlign = ContentAlignment.MiddleRight;
 
-            powerLabel = NewLabel("--.-- W", 24, 40, 384, 54, 33f, FontStyle.Bold);
+            powerLabel = new PowerReadout();
+            powerLabel.Text = "--.-- W";
+            powerLabel.Bounds = new Rectangle(20, 42, 380, 56);
+            powerLabel.Font = new Font("Segoe UI", 32f, FontStyle.Bold, GraphicsUnit.Point);
             powerLabel.ForeColor = UiTheme.Charging;
 
-            detailLabel = NewLabel("电池端 -- V    电池电流 ≈ -- A", 24, 100, 384, 16, 9f, FontStyle.Regular);
+            detailLabel = NewLabel("", 20, 102, 380, 20, 9f, FontStyle.Regular);
             detailLabel.ForeColor = UiTheme.Muted;
 
             chart = new SparklinePanel();
-            chart.Location = new Point(24, 124);
-            chart.Size = new Size(384, 72);
+            chart.Location = new Point(20, 134);
+            chart.Size = new Size(380, 52);
             Controls.Add(chart);
 
-            statisticsLabel = NewLabel("均值 -- W（有效 --/30s）", 24, 204, 190, 15, 8.5f, FontStyle.Regular);
+            statisticsLabel = NewLabel("", 20, 192, 224, 20, 8f, FontStyle.Regular);
             statisticsLabel.ForeColor = UiTheme.Muted;
 
-            historyLabel = NewLabel("峰值 -- W · 0/60s", 214, 204, 194, 15, 8.5f, FontStyle.Regular);
+            historyLabel = NewLabel("", 244, 192, 156, 20, 8f, FontStyle.Regular);
             historyLabel.ForeColor = UiTheme.Muted;
             historyLabel.TextAlign = ContentAlignment.MiddleRight;
 
-            Label batterySection = NewLabel("电池", 24, 232, 80, 18, 9.5f, FontStyle.Bold);
+            Label batterySection = NewLabel("电池电量", 20, 224, 100, 20, 9f, FontStyle.Regular);
             batterySection.ForeColor = UiTheme.Ink;
             Controls.Add(batterySection);
 
-            percentageLabel = NewLabel("--%", 284, 230, 124, 20, 11f, FontStyle.Bold);
+            percentageLabel = NewLabel("--%", 300, 224, 100, 20, 10f, FontStyle.Bold);
             percentageLabel.ForeColor = UiTheme.Ink;
             percentageLabel.TextAlign = ContentAlignment.MiddleRight;
 
             batteryBar = new BatteryBar();
-            batteryBar.Location = new Point(24, 254);
-            batteryBar.Size = new Size(384, 6);
+            batteryBar.Location = new Point(20, 250);
+            batteryBar.Size = new Size(380, 4);
             Controls.Add(batteryBar);
 
             Panel divider = new Panel();
             divider.BackColor = UiTheme.Hairline;
-            divider.Bounds = new Rectangle(24, 276, 384, 1);
+            divider.Bounds = new Rectangle(20, 270, 380, 1);
             Controls.Add(divider);
 
             BuildPowerSourceRows();
 
-            Label note = NewLabel(
-                "外电：平台 + 电池端净功率；未含转换损耗。",
-                24, 352, 384, 14, 8f, FontStyle.Regular);
-            note.ForeColor = UiTheme.Faint;
-
             errorLabel = new TextBox();
             errorLabel.Multiline = true;
             errorLabel.AutoSize = false;
-            errorLabel.Bounds = new Rectangle(24, 370, 384, 28);
+            errorLabel.Bounds = new Rectangle(20, 380, 380, 48);
             errorLabel.ReadOnly = true;
             errorLabel.ScrollBars = ScrollBars.Vertical;
             errorLabel.BorderStyle = BorderStyle.None;
             errorLabel.BackColor = UiTheme.Surface;
-            errorLabel.Font = new Font("Segoe UI", 8.5f, FontStyle.Regular, GraphicsUnit.Point);
+            errorLabel.Font = new Font(UiTheme.TextFont, 8.5f, FontStyle.Regular, GraphicsUnit.Point);
             errorLabel.ForeColor = UiTheme.ErrorRed;
+            errorLabel.TextChanged += delegate { UpdateDiagnosticLayout(); };
 
             footerBand = new Panel();
             footerBand.BackColor = UiTheme.FooterBand;
-            footerBand.Bounds = new Rectangle(0, 432, 432, 68);
+            footerBand.Bounds = new Rectangle(0, 440, 420, 68);
 
             Panel footerRule = new Panel();
             footerRule.BackColor = UiTheme.FooterRule;
-            footerRule.Bounds = new Rectangle(0, 0, 432, 1);
+            footerRule.Bounds = new Rectangle(0, 0, 420, 1);
             footerBand.Controls.Add(footerRule);
 
             modeSegments = new SegmentedControl("整机功率", "电池端");
-            modeSegments.Font = new Font("Segoe UI", 9f, FontStyle.Regular, GraphicsUnit.Point);
-            modeSegments.Bounds = new Rectangle(24, 13, 192, 26);
+            modeSegments.Font = new Font(UiTheme.TextFont, 9f, FontStyle.Regular, GraphicsUnit.Point);
+            modeSegments.Bounds = new Rectangle(20, 10, 164, 28);
             modeSegments.SelectedIndex = displayMode == DisplayMode.Battery ? 1 : 0;
             modeSegments.SelectionChanged += delegate
             {
@@ -346,17 +347,18 @@ namespace BatteryChargeMeter
             footerBand.Controls.Add(modeSegments);
 
             CheckBox topMostCheckBox = new CheckBox();
-            topMostCheckBox.Text = "置顶";
+            topMostCheckBox.Tag = "置顶";
+            topMostCheckBox.Text = Strings.Get("置顶");
             topMostCheckBox.Checked = true;
-            topMostCheckBox.AutoSize = true;
-            topMostCheckBox.Font = new Font("Segoe UI", 9f, FontStyle.Regular, GraphicsUnit.Point);
-            topMostCheckBox.Location = new Point(232, 18);
+            topMostCheckBox.AutoSize = false;
+            topMostCheckBox.Font = new Font(UiTheme.TextFont, 9f, FontStyle.Regular, GraphicsUnit.Point);
+            topMostCheckBox.Bounds = new Rectangle(208, 10, 90, 28);
             topMostCheckBox.ForeColor = UiTheme.Muted;
-            topMostCheckBox.FlatStyle = FlatStyle.Flat;
+            topMostCheckBox.FlatStyle = FlatStyle.System;
             topMostCheckBox.CheckedChanged += delegate { TopMost = topMostCheckBox.Checked; };
             footerBand.Controls.Add(topMostCheckBox);
 
-            updatedLabel = NewLabel("--:--:--", 348, 19, 60, 15, 8.5f, FontStyle.Regular);
+            updatedLabel = NewLabel("--:--:--", 324, 44, 76, 18, 8f, FontStyle.Regular);
             updatedLabel.ForeColor = UiTheme.Faint;
             updatedLabel.TextAlign = ContentAlignment.MiddleRight;
             footerBand.Controls.Add(updatedLabel);
@@ -370,7 +372,6 @@ namespace BatteryChargeMeter
             Controls.Add(statisticsLabel);
             Controls.Add(historyLabel);
             Controls.Add(percentageLabel);
-            Controls.Add(note);
             Controls.Add(errorLabel);
 
             timer = new Timer();
@@ -378,14 +379,14 @@ namespace BatteryChargeMeter
             timer.Tick += TimerTick;
 
             trayMenu = new ContextMenuStrip();
-            ToolStripMenuItem showMenuItem = new ToolStripMenuItem("显示窗口");
+            ToolStripMenuItem showMenuItem = LocalizedMenuItem("显示窗口");
             showMenuItem.Font = new Font(showMenuItem.Font, FontStyle.Bold);
             showMenuItem.Click += delegate { RestoreFromTray(); };
-            ToolStripMenuItem exitMenuItem = new ToolStripMenuItem("退出");
+            ToolStripMenuItem exitMenuItem = LocalizedMenuItem("退出");
             exitMenuItem.Click += delegate { Close(); };
             trayMenu.Items.Add(showMenuItem);
-            wholeModeItem = new ToolStripMenuItem("整机功率");
-            batteryModeItem = new ToolStripMenuItem("电池端净功率");
+            wholeModeItem = LocalizedMenuItem("整机功率");
+            batteryModeItem = LocalizedMenuItem("电池端净功率");
             wholeModeItem.Click += delegate { ChangeMode(DisplayMode.WholeSystem); };
             batteryModeItem.Click += delegate { ChangeMode(DisplayMode.Battery); };
             trayMenu.Items.Add(wholeModeItem);
@@ -394,7 +395,7 @@ namespace BatteryChargeMeter
             trayMenu.Items.Add(exitMenuItem);
 
             trayIcon = new NotifyIcon();
-            trayIcon.Text = "Net battery terminal power: reading sensor...";
+            trayIcon.Text = Strings.AppName + ": " + Strings.Get("正在读取");
             trayIcon.Icon = Icon;
             trayIcon.ContextMenuStrip = trayMenu;
             trayIcon.Visible = false;
@@ -402,6 +403,7 @@ namespace BatteryChargeMeter
 
             BuildElevationControls(startupMessage);
             BuildAutostartControls();
+            BuildLanguageControls();
             ChangeMode(displayMode);
 
             Shown += delegate
@@ -409,7 +411,8 @@ namespace BatteryChargeMeter
                 StartMonitoring();
             };
 
-            dpiLayout = new DpiLayout(this, ClientSize);
+            dpiLayout = new DpiLayout(this, ClientSize, errorLabel, 60);
+            UpdateDiagnosticLayout();
         }
 
         protected override void OnHandleCreated(EventArgs e)
@@ -497,6 +500,7 @@ namespace BatteryChargeMeter
                     generatedTrayIcon.Dispose();
                 if (trayMenu != null)
                     trayMenu.Dispose();
+                languageMenu.Dispose();
                 if (dpiLayout != null)
                     dpiLayout.Dispose();
                 DisposePowerSources();
@@ -521,12 +525,14 @@ namespace BatteryChargeMeter
 
         private Label NewLabel(string text, int x, int y, int width, int height, float size, FontStyle style)
         {
-            Label label = new Label();
-            label.Text = text;
+            Label label = new AlignedLabel();
+            label.Tag = text;
+            label.Text = Strings.Get(text);
             label.Location = new Point(x, y);
             label.Size = new Size(width, height);
-            label.Font = new Font("Segoe UI", size, style, GraphicsUnit.Point);
+            label.Font = new Font(UiTheme.TextFont, size, style, GraphicsUnit.Point);
             label.BackColor = Color.Transparent;
+            label.TextAlign = ContentAlignment.MiddleLeft;
             return label;
         }
 
@@ -562,18 +568,20 @@ namespace BatteryChargeMeter
                 latest = null;
                 history.Clear();
                 chart.SetHistory(history.Points, UiTheme.ErrorRed);
-                statisticsLabel.Text = "均值 -- W（有效 --/30s）";
-                historyLabel.Text = "峰值 -- W · 0/60s";
-                stateLabel.Text = "SENSOR ERROR";
+                statisticsLabel.Text = Strings.Format("均值 {0} W（有效 {1:0.#}/30s）", "--", 0);
+                historyLabel.Text = Strings.Format("峰值 {0} W · {1}/60s", "--", "0");
+                stateLabel.Text = Strings.Get("传感器异常");
+                stateLabel.ForeColor = UiTheme.ErrorRed;
+                powerLabel.ForeColor = UiTheme.Muted;
                 powerLabel.Text = "N/A";
-                detailLabel.Text = "电池端 -- V   电池电流 ≈ -- A";
+                detailLabel.Text = Strings.Format("电池端 {0}   电池电流 ≈ {1}", "-- V", "-- A");
                 percentageLabel.Text = "--%";
                 batteryBar.SetValue(-1, UiTheme.ErrorRed);
                 ShowSourceError(batteryValue, ex.Message);
                 ShowSourceError(cpuPackageValue, ex.Message);
                 ShowSourceError(platformValue, ex.Message);
                 ShowSourceError(wholeSystemValue, ex.Message);
-                errorLabel.Text = ex.Message;
+                errorLabel.Text = Strings.Diagnostic(ex.Message);
                 UpdateTrayError();
             }
         }
@@ -582,15 +590,13 @@ namespace BatteryChargeMeter
         {
             BatteryReading reading = snapshot.Battery;
             PowerSample selected = PowerDisplay.Select(snapshot, displayMode);
-            errorLabel.Text = "";
-
             BatterySupplyProfile profile = reading.SupplyProfile;
             Color accent = UiTheme.Accent(profile.Accent);
 
-            stateLabel.Text = profile.StateText;
+            stateLabel.Text = UiTheme.SupplyCaption(reading.SupplyState);
             stateLabel.ForeColor = accent;
 
-            title.Text = PowerSample.LabelFor(selected.Boundary);
+            title.Text = Strings.Get(PowerSample.LabelFor(selected.Boundary));
             if (selected.Available)
             {
                 powerLabel.Text = (selected.Kind == MeasurementKind.Estimated ? "≈ " : "")
@@ -599,7 +605,6 @@ namespace BatteryChargeMeter
             else
             {
                 powerLabel.Text = "N/A";
-                errorLabel.Text = selected.UnavailableReason;
             }
             if (addHistory)
                 history.Add(snapshot.ElapsedSeconds, displayMode, reading.SupplyState, selected);
@@ -612,7 +617,7 @@ namespace BatteryChargeMeter
             string currentText = reading.CurrentAvailable
                 ? reading.CurrentAmps.ToString("0.00", CultureInfo.InvariantCulture) + " A"
                 : "--.-- A";
-            detailLabel.Text = "电池端 " + voltageText + "   电池电流 ≈ " + currentText;
+            detailLabel.Text = Strings.Format("电池端 {0}   电池电流 ≈ {1}", voltageText, currentText);
             percentageLabel.Text = reading.Percentage >= 0
                 ? reading.Percentage.ToString(CultureInfo.InvariantCulture) + "%"
                 : "--%";
@@ -634,7 +639,7 @@ namespace BatteryChargeMeter
             string power = selected.Available
                 ? (selected.Kind == MeasurementKind.Estimated ? "≈ " : "") + selected.Watts.ToString("0.00", CultureInfo.InvariantCulture) + " W"
                 : "N/A";
-            SetTrayTooltip(PowerSample.LabelFor(selected.Boundary) + ": " + power);
+            SetTrayTooltip(Strings.Get(PowerSample.LabelFor(selected.Boundary)) + ": " + power);
         }
 
         private void UpdateTrayError()
@@ -642,7 +647,7 @@ namespace BatteryChargeMeter
             if (!trayEnabled)
                 return;
             SetTrayIcon("--", UiTheme.TrayNeutral);
-            SetTrayTooltip(displayMode == DisplayMode.Battery ? "电池端净功率: N/A" : "整机功率: N/A");
+            SetTrayTooltip(Strings.Get(displayMode == DisplayMode.Battery ? "电池端净功率" : "整机功率") + ": N/A");
         }
 
         private string TrayPowerText(double powerWatts)
@@ -720,13 +725,11 @@ namespace BatteryChargeMeter
             double? average = history.Average(out coverage);
             double? peak = history.Peak();
             string prefix = latest != null && PowerDisplay.Select(latest, displayMode).Kind == MeasurementKind.Estimated ? "≈ " : "";
-            statisticsLabel.Text = String.Format(
-                CultureInfo.InvariantCulture,
+            statisticsLabel.Text = Strings.Format(
                 "均值 {0} W（有效 {1:0.#}/30s）",
                 average.HasValue ? prefix + average.Value.ToString("0.00", CultureInfo.InvariantCulture) : "--",
                 coverage);
-            historyLabel.Text = String.Format(
-                CultureInfo.InvariantCulture,
+            historyLabel.Text = Strings.Format(
                 "峰值 {0} W · {1}/60s",
                 peak.HasValue ? prefix + peak.Value.ToString("0.00", CultureInfo.InvariantCulture) : "--",
                 history.Duration(60).ToString("0.#", CultureInfo.InvariantCulture));
@@ -753,13 +756,14 @@ namespace BatteryChargeMeter
         {
             bool elevated = Startup.IsElevated();
             elevationMessage = elevated ? null : message;
-            Label status = NewLabel(elevated ? "管理员模式" : "普通模式", 24, 406, 88, 18, 8.5f, FontStyle.Regular);
+            Label status = NewLabel(elevated ? "管理员模式" : "普通模式", 20, 44, 72, 18, 8f, FontStyle.Regular);
             status.ForeColor = UiTheme.Muted;
-            Controls.Add(status);
+            footerBand.Controls.Add(status);
             LinkLabel retry = new LinkLabel();
-            retry.Text = "以管理员身份重新启动";
-            retry.Bounds = new Rectangle(112, 406, 220, 18);
-            retry.Font = new Font("Segoe UI", 8.5f, FontStyle.Regular, GraphicsUnit.Point);
+            retry.Tag = "以管理员身份重新启动";
+            retry.Text = Strings.Get("以管理员身份重新启动");
+            retry.Bounds = new Rectangle(92, 44, 170, 18);
+            retry.Font = new Font(UiTheme.TextFont, 8f, FontStyle.Regular, GraphicsUnit.Point);
             retry.LinkColor = UiTheme.Ink;
             retry.ActiveLinkColor = UiTheme.Charging;
             retry.VisitedLinkColor = UiTheme.Ink;
@@ -780,7 +784,15 @@ namespace BatteryChargeMeter
                     retry.Enabled = true;
                 }
             };
-            Controls.Add(retry);
+            footerBand.Controls.Add(retry);
+        }
+
+        private void UpdateDiagnosticLayout()
+        {
+            bool expanded = !String.IsNullOrWhiteSpace(errorLabel.Text);
+            errorLabel.Visible = expanded;
+            if (dpiLayout != null)
+                dpiLayout.SetSectionExpanded(expanded);
         }
 
     }

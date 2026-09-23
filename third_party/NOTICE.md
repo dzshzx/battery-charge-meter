@@ -1,5 +1,36 @@
 # Third-party components
 
+## Inno Setup Chinese translation
+
+`installer/Languages/ChineseSimplified.isl` is an unmodified copy from
+https://github.com/jrsoftware/issrc at commit
+`6ef32198ef1f7b7b375cd4b6b90896c2a58eb4c2`. It is maintained upstream by
+Zhenghan Yang (Kira). The Inno Setup license and copyright notices are retained
+in `installer/Languages/LICENSE.Inno-Setup.txt`; the installer retains Inno
+Setup's built-in copyright and website notices.
+
+## Lucide battery-medium icon
+
+The application icon uses the unmodified `battery-medium` paths from
+https://github.com/lucide-icons/lucide/blob/main/icons/battery-medium.svg,
+placed on a rounded green background in `src/BatteryChargeMeter.svg`.
+
+ISC License
+
+Copyright (c) 2026 Lucide Icons and Contributors
+
+Permission to use, copy, modify, and/or distribute this software for any
+purpose with or without fee is hereby granted, provided that the above
+copyright notice and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
 ## IntelMSR.bin
 
 A PawnIO module that exposes a whitelisted set of Intel MSRs, including

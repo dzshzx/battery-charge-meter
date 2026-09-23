@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$Executable = (Join-Path $PSScriptRoot '..\dist\BatteryChargeMeter.exe'),
+    [string]$Executable = (Join-Path $PSScriptRoot '..\dist\PowerMeter.exe'),
     [switch]$GuiOnly,
     [switch]$CheckOrdinaryClient
 )
@@ -24,7 +24,7 @@ $Executable = (Resolve-Path -LiteralPath $Executable).Path
 $testId = [Guid]::NewGuid().ToString('N')
 $taskName = "BatteryChargeMeter.Test.$testId"
 $testRoot = Join-Path ([IO.Path]::GetTempPath()) "bcm-autostart-$testId"
-$copyA = Join-Path $testRoot '版本 A & space\Battery Meter 1.2.1.exe'
+$copyA = Join-Path $testRoot '版本 A & space\PowerMeter.exe'
 $copyB = Join-Path $testRoot 'copy B\Battery Meter.exe'
 $copyC = Join-Path $testRoot 'copy C\Battery Meter.exe'
 $service = New-Object -ComObject 'Schedule.Service'
@@ -141,7 +141,7 @@ public static class BcmAutostartWindowProbe {
             if (owner != process) return true;
             StringBuilder title = new StringBuilder(256);
             GetWindowText(window, title, 256);
-            if (title.ToString() == "Battery Charge Meter") result = IsWindowVisible(window) ? 2 : 1;
+            if (title.ToString() == "Power Meter" || title.ToString() == "功率计") result = IsWindowVisible(window) ? 2 : 1;
             return true;
         }, IntPtr.Zero);
         return result;
@@ -168,7 +168,12 @@ try {
     $lease.Dispose()
     $lease = $null
     if ($GuiOnly) {
-        $child = Start-Process -FilePath $copyA -ArgumentList '--autostart' -PassThru
+        $legacy = Join-Path (Split-Path $copyA) 'BatteryChargeMeter.exe'
+        Copy-Item (Join-Path $PSScriptRoot '..\dist\compat\BatteryChargeMeter.exe') $legacy
+        $forwarder = Start-Process -FilePath $legacy -ArgumentList '--autostart' -PassThru
+        Assert-True ($forwarder.WaitForExit(10000) -and $forwarder.ExitCode -eq 0) 'legacy logon action starts the renamed application'
+        $running = @(Wait-TestProcess 1)
+        $child = Get-Process -Id $running[0].ProcessId
         Wait-HiddenWindow $child.Id
         Assert-True (-not $child.HasExited) 'ordinary-token autostart is ready and hidden without UAC'
         $parentElevated = ([Security.Principal.WindowsPrincipal]$identity).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
