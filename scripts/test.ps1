@@ -339,14 +339,18 @@ $packageDir = Join-Path ([IO.Path]::GetTempPath()) (
 try {
     New-Item -ItemType Directory -Path $packageDir | Out-Null
     $installerCompilerPath = @(
-        (Get-Command 'ISCC.exe' -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -First 1),
         (Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'),
-        (Join-Path $env:ProgramFiles 'Inno Setup 6\ISCC.exe')
+        (Join-Path $env:ProgramFiles 'Inno Setup 6\ISCC.exe'),
+        (Get-Command 'ISCC.exe' -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -First 1)
     ) | Where-Object { $_ -and (Test-Path -LiteralPath $_) } | Select-Object -First 1
     $usingRealInstallerCompiler = [bool]$installerCompilerPath
     $realInstallerCompilerPath = $installerCompilerPath
     if ($usingRealInstallerCompiler) {
-        $installerCompilerVersion = [Diagnostics.FileVersionInfo]::GetVersionInfo($installerCompilerPath).ProductVersion
+        $compilerInfo = [Diagnostics.FileVersionInfo]::GetVersionInfo($installerCompilerPath)
+        $installerCompilerVersion = if ($compilerInfo.ProductVersion) { $compilerInfo.ProductVersion } else { $compilerInfo.FileVersion }
+        if (-not $installerCompilerVersion -or $installerCompilerVersion -match 'Chocolatey Shim|^0\.0\.0\.0') {
+            throw "Cannot determine the real Inno Setup version from $installerCompilerPath. Select its installed ISCC.exe, not a package-manager shim."
+        }
         Write-Host "Installer verification: real Inno Setup compiler ($installerCompilerPath), including install/uninstall."
     } else {
         $installerSkipReason = 'Inno Setup ISCC.exe is unavailable; real installer creation and per-user install/uninstall were not executed.'
