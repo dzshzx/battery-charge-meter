@@ -346,11 +346,21 @@ try {
     $usingRealInstallerCompiler = [bool]$installerCompilerPath
     $realInstallerCompilerPath = $installerCompilerPath
     if ($usingRealInstallerCompiler) {
-        $compilerInfo = [Diagnostics.FileVersionInfo]::GetVersionInfo($installerCompilerPath)
-        $installerCompilerVersion = if ($compilerInfo.ProductVersion) { $compilerInfo.ProductVersion } else { $compilerInfo.FileVersion }
-        if (-not $installerCompilerVersion -or $installerCompilerVersion -match 'Chocolatey Shim|^0\.0\.0\.0') {
-            throw "Cannot determine the real Inno Setup version from $installerCompilerPath. Select its installed ISCC.exe, not a package-manager shim."
+        # ISCC.exe's Windows version resource can be 0.0.0.0. Query its own
+        # preprocessor instead, so a Chocolatey shim cannot supply the version.
+        $versionProbePath = Join-Path $packageDir 'compiler-version.iss'
+        @'
+#pragma message "ISCC_VERSION=" + VersionToStr(Ver)
+[Setup]
+AppName=CompilerVersionProbe
+AppVersion=1
+DefaultDirName={autopf}\CompilerVersionProbe
+'@ | Set-Content -LiteralPath $versionProbePath -Encoding utf8
+        $versionOutput = (& $installerCompilerPath '/O-' $versionProbePath 2>&1 | Out-String)
+        if ($LASTEXITCODE -ne 0 -or $versionOutput -notmatch 'ISCC_VERSION=(?<version>\d+\.\d+\.\d+\.\d+)') {
+            throw "Inno Setup compiler version probe failed: $versionOutput"
         }
+        $installerCompilerVersion = $Matches.version
         Write-Host "Installer verification: real Inno Setup compiler ($installerCompilerPath), including install/uninstall."
     } else {
         $installerSkipReason = 'Inno Setup ISCC.exe is unavailable; real installer creation and per-user install/uninstall were not executed.'
