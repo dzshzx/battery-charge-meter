@@ -29,7 +29,7 @@ namespace BatteryChargeMeter
                 number = number.Substring(2);
 
             float scale = Font.SizeInPoints / 32f;
-            using (Font small = new Font(Font.FontFamily, Font.Size * 0.48f, FontStyle.Regular, Font.Unit))
+            using (Font small = new Font("Segoe UI", Font.Size * 0.48f, FontStyle.Regular, Font.Unit))
             {
                 TextFormatFlags flags = TextFormatFlags.NoPadding | TextFormatFlags.SingleLine
                     | TextFormatFlags.NoPrefix;

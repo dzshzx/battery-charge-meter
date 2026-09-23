@@ -15,6 +15,12 @@ namespace BatteryChargeMeter
         private static readonly Dictionary<string, string> English = new Dictionary<string, string>
         {
             { "功率计", "Power Meter" },
+            { "设置", "Settings" },
+            { "语言", "Language" },
+            { "更新时间", "Last updated" },
+            { "当前权限：{0}", "Permission: {0}" },
+            { "30 秒均值 · 有效 {0:0.#}s", "30s average · {0:0.#}s valid" },
+            { "60 秒峰值 · 已采样 {0}s", "60s peak · {0}s sampled" },
             { "估算整机输入功率", "Estimated system input" },
             { "电池端净功率", "Net battery terminal power" },
             { "CPU 包功率", "CPU package power" },

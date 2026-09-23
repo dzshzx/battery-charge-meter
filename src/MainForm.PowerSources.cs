@@ -19,6 +19,7 @@ namespace BatteryChargeMeter
         private Label platformValue;
         private Label wholeSystemName;
         private Label wholeSystemValue;
+        private AntdUI.Panel sourcesPanel;
 
         /// <summary>
         /// Builds the source rows. Called from the constructor before
@@ -43,17 +44,17 @@ namespace BatteryChargeMeter
 
         private Label AddSourceRow(int index, string caption, out Label nameLabel)
         {
-            int y = 280 + index * 22;
+            int y = 44 + index * 22;
 
-            nameLabel = NewLabel(caption, 20, y, 238, 22, 9f, FontStyle.Regular);
+            nameLabel = NewLabel(caption, 14, y, 234, 22, 9f, FontStyle.Regular);
             nameLabel.ForeColor = UiTheme.Muted;
-            Controls.Add(nameLabel);
+            sourcesPanel.Controls.Add(nameLabel);
 
-            Label value = NewLabel("--", 266, y, 134, 22, 9.5f, FontStyle.Bold);
-            value.Font = new Font("Segoe UI", 9.5f, FontStyle.Bold, GraphicsUnit.Point);
+            Label value = NewLabel("--", 248, y, 118, 22, 9.5f, FontStyle.Regular);
+            value.Font = new Font("Segoe UI Semibold", 9.5f, FontStyle.Regular, GraphicsUnit.Point);
             value.TextAlign = ContentAlignment.MiddleRight;
             value.ForeColor = UiTheme.Ink;
-            Controls.Add(value);
+            sourcesPanel.Controls.Add(value);
 
             return value;
         }

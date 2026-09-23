@@ -68,6 +68,7 @@ namespace BatteryChargeMeter
             int collapsedHeight = sectionExpanded ? 0 : optionalSectionHeight;
 
             float scale = dpi / 96f;
+            AntdUI.Config.SetDpi(scale);
             // A same-DPI resize must retain its fonts: WinForms ignores an
             // equal Font assignment, so disposing the old one would dispose
             // the object still held by the control.

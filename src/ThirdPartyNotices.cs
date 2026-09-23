@@ -21,7 +21,12 @@ namespace BatteryChargeMeter
                     + "---" + Environment.NewLine
                     + "GNU Lesser General Public License 2.1" + Environment.NewLine
                     + "---" + Environment.NewLine
-                    + license,
+                    + license + Environment.NewLine + Environment.NewLine
+                    + "AntdUI - Apache License 2.0" + Environment.NewLine
+                    + ReadResource("Apache-2.0.txt") + Environment.NewLine + Environment.NewLine
+                    + "Lucide icons" + Environment.NewLine + ReadResource("Lucide-license.txt")
+                    + Environment.NewLine + Environment.NewLine + "SVG.NET (included in AntdUI)" + Environment.NewLine
+                    + ReadResource("Ms-PL.txt"),
                 Encoding.UTF8);
         }
 

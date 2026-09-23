@@ -6,7 +6,7 @@ namespace BatteryChargeMeter
 {
     internal sealed partial class MainForm
     {
-        private CheckBox autostartCheckBox;
+        private AntdUI.Checkbox autostartCheckBox;
         private ToolStripMenuItem autostartMenuItem;
         private bool updatingAutostart;
         private string autostartMessage;
@@ -16,20 +16,6 @@ namespace BatteryChargeMeter
 
         private void BuildAutostartControls()
         {
-            autostartCheckBox = new CheckBox();
-            autostartCheckBox.Tag = "开机自启";
-            autostartCheckBox.Text = Strings.Get("开机自启");
-            autostartCheckBox.AutoSize = false;
-            autostartCheckBox.Font = new Font(UiTheme.TextFont, 9f, FontStyle.Regular, GraphicsUnit.Point);
-            autostartCheckBox.Bounds = new Rectangle(302, 10, 98, 28);
-            autostartCheckBox.ForeColor = UiTheme.Muted;
-            autostartCheckBox.FlatStyle = FlatStyle.System;
-            autostartCheckBox.CheckedChanged += delegate
-            {
-                if (!updatingAutostart)
-                    ChangeAutostart(autostartCheckBox.Checked);
-            };
-            footerBand.Controls.Add(autostartCheckBox);
             autostartMenuItem = LocalizedMenuItem("开机自启（登录后）");
             autostartMenuItem.Click += delegate { ChangeAutostart(!autostartMenuItem.Checked); };
             trayMenu.Items.Insert(3, autostartMenuItem);
@@ -51,7 +37,8 @@ namespace BatteryChargeMeter
                     enabled = state.ThisCopy && state.Enabled;
                     if (state.ThisCopy && !String.IsNullOrEmpty(state.RepairReason))
                         autostartStateMessage = state.RepairReason;
-                    sourceTip.SetToolTip(autostartCheckBox, state.Exists && !state.ThisCopy
+                    if (autostartCheckBox != null && !autostartCheckBox.IsDisposed)
+                        sourceTip.SetToolTip(autostartCheckBox, state.Exists && !state.ThisCopy
                         ? Strings.Format("当前自启指向：{0}；勾选可确认更换。", state.Executable)
                         : Strings.Get("以当前 Windows 用户登录后，管理员权限运行并留在托盘。移动程序后需重新启用。"));
                 }
@@ -62,9 +49,10 @@ namespace BatteryChargeMeter
                 autostartStateMessage = "自启状态读取失败：" + ErrorMessage(error);
             }
             updatingAutostart = true;
-            autostartCheckBox.CheckState = known
-                ? (enabled ? CheckState.Checked : CheckState.Unchecked)
-                : CheckState.Indeterminate;
+            if (autostartCheckBox != null && !autostartCheckBox.IsDisposed)
+                autostartCheckBox.CheckState = known
+                    ? (enabled ? CheckState.Checked : CheckState.Unchecked)
+                    : CheckState.Indeterminate;
             autostartMenuItem.Checked = enabled;
             autostartMenuItem.ToolTipText = known ? "" : Strings.Get("状态读取失败，请查看主窗口中的原因。");
             updatingAutostart = false;

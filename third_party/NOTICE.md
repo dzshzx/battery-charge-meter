@@ -1,5 +1,21 @@
 # Third-party components
 
+## AntdUI
+
+The application embeds the unmodified .NET Framework 4.6 assembly from
+AntdUI 2.4.11, Copyright (c) Tom 2024-2030, licensed under Apache-2.0.
+Upstream: https://github.com/AntdUI/AntdUI. Package:
+https://www.nuget.org/packages/AntdUI/2.4.11. The NuGet package SHA-256 is
+`21b856ffa3ec518a0576492fac9c529b7436fead02e6b057af9aa9c0c917b908`.
+`scripts/restore-ui.ps1` verifies the archive before every build; binaries are
+cached locally, not committed. The GUI uses its buttons, panel, checkbox,
+language selector and popover. No separate UI runtime installation is needed.
+
+AntdUI includes SVG.NET rendering code, Copyright (c) svg-net, under the
+Microsoft Public License: https://github.com/svg-net/SVG. The Apache-2.0 and
+Ms-PL license texts are retained in this directory and included in the EXE's
+third-party-notice export, portable release notice and installed notice.
+
 ## Inno Setup Chinese translation
 
 `installer/Languages/ChineseSimplified.isl` is an unmodified copy from
@@ -9,11 +25,14 @@ Zhenghan Yang (Kira). The Inno Setup license and copyright notices are retained
 in `installer/Languages/LICENSE.Inno-Setup.txt`; the installer retains Inno
 Setup's built-in copyright and website notices.
 
-## Lucide battery-medium icon
+## Lucide icons
 
 The application icon uses the unmodified `battery-medium` paths from
 https://github.com/lucide-icons/lucide/blob/main/icons/battery-medium.svg,
 placed on a rounded green background in `src/BatteryChargeMeter.svg`.
+The interface also uses Lucide `pin` and `settings-2` paths with a neutral
+stroke. The complete Lucide/Feather license text is retained in
+`LICENSE.Lucide.txt` and included in the same notice export.
 
 ISC License
 

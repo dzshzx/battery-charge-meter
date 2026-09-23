@@ -19,6 +19,40 @@ using System;
 using System.Drawing;
 using System.Windows.Forms;
 public static class FooterTextProbe {
+    public static void AssertIcon(Control control) {
+        int ink = 0;
+        using (Bitmap bitmap = new Bitmap(control.Width, control.Height)) {
+            control.DrawToBitmap(bitmap, new Rectangle(Point.Empty, bitmap.Size));
+            for (int y = control.Height / 4; y < control.Height * 3 / 4; y++)
+                for (int x = control.Width / 4; x < control.Width * 3 / 4; x++) {
+                    Color pixel = bitmap.GetPixel(x, y);
+                    if (pixel.R < 96 && pixel.G < 96 && pixel.B < 96) ink++;
+                }
+        }
+        if (ink < 4) throw new InvalidOperationException("Pin icon did not render.");
+    }
+    public static void Click(Control control) { ((IButtonControl)control).PerformClick(); }
+    public static void Capture(Control control, string path) {
+        using (Bitmap bitmap = new Bitmap(control.Width, control.Height)) {
+            control.DrawToBitmap(bitmap, new Rectangle(Point.Empty, bitmap.Size));
+            bitmap.Save(path, System.Drawing.Imaging.ImageFormat.Png);
+        }
+    }
+    public static void AssertLayout(Control parent) {
+        foreach (Control control in parent.Controls) {
+            if (!control.Visible) continue;
+            if (control.GetType().Name == "AlignedLabel") {
+                Size required = TextRenderer.MeasureText(control.Text, control.Font, Size.Empty,
+                    TextFormatFlags.NoPadding | TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix);
+                if (required.Width > control.Width || required.Height > control.Height)
+                    throw new InvalidOperationException("Clipped label: " + control.Text + "; required=" + required + "; actual=" + control.Size);
+            }
+            foreach (Control other in parent.Controls)
+                if (other.Visible && other != control && control.Bounds.IntersectsWith(other.Bounds))
+                    throw new InvalidOperationException("Overlapping controls: " + control.Text + " / " + other.Text);
+            if (control.HasChildren) AssertLayout(control);
+        }
+    }
     public static int InkTop(Control control) {
         string text = control.Text;
         Color back = control.BackColor, fore = control.ForeColor;
@@ -56,6 +90,7 @@ public static class FooterTextProbe {
 '@
 $Executable = (Resolve-Path -LiteralPath $Executable).Path
 $assembly = [Reflection.Assembly]::LoadFile($Executable)
+$assembly.GetType('BatteryChargeMeter.EmbeddedUi').GetMethod('Initialize', [Reflection.BindingFlags]'Static,NonPublic').Invoke($null, @())
 $flags = [Reflection.BindingFlags]'Instance,Public,NonPublic'
 New-Item -ItemType Directory -Force -Path $OutputDirectory | Out-Null
 
@@ -88,22 +123,7 @@ function Assert-True([bool]$Value, [string]$Message) {
     if (-not $Value) { throw $Message }
 }
 function Assert-Layout($Parent) {
-    $visible = @($Parent.Controls | Where-Object Visible)
-    foreach ($control in $visible) {
-        if ($control.GetType().Name -eq 'AlignedLabel') {
-            $required = [Windows.Forms.TextRenderer]::MeasureText($control.Text, $control.Font,
-                [Drawing.Size]::Empty, [Windows.Forms.TextFormatFlags]'NoPadding,SingleLine,NoPrefix')
-            Assert-True ($required.Width -le $control.Width -and $required.Height -le $control.Height) `
-                "Clipped label '$($control.Text)': needs $required, has $($control.Size)"
-        }
-        foreach ($other in $visible) {
-            if ($control -ne $other) {
-                Assert-True (-not $control.Bounds.IntersectsWith($other.Bounds)) `
-                    "Overlapping controls '$($control.Text)' and '$($other.Text)'"
-            }
-        }
-        if ($control.HasChildren) { Assert-Layout $control }
-    }
+    [FooterTextProbe]::AssertLayout($Parent)
 }
 
 $form = [Activator]::CreateInstance($assembly.GetType('BatteryChargeMeter.MainForm'), @($false))
@@ -175,26 +195,41 @@ try {
             [Windows.Forms.Application]::DoEvents()
             $scale = $dpi / 96.0
             $diagnostics = Get-Field $form 'errorLabel'
-            $expectedHeight = if ($scenario -eq 'unavailable') { 508 } else { 448 }
+            $expectedHeight = if ($scenario -eq 'unavailable') { 528 } else { 468 }
             Assert-True ($form.AutoScrollMinSize.Height -eq [Math]::Round($expectedHeight * $scale)) `
                 'Diagnostic expansion/collapse did not resize the content'
             Assert-True ($diagnostics.Visible -eq ($scenario -eq 'unavailable')) 'Unexpected diagnostic visibility'
             Assert-Layout $form
             if ($scenario -eq 'idle') {
-                $footer = Get-Field $form 'footerBand'
                 $timestamp = Get-Field $form 'updatedLabel'
-                $inkTops = @($footer.Controls | Where-Object {
-                    $_.Visible -and $_.Top -eq $timestamp.Top -and $_ -is [Windows.Forms.Label]
-                } | ForEach-Object { [FooterTextProbe]::InkTop($_) })
+                $inkTops = @(@((Get-Field $form 'detailLabel'), $timestamp) | ForEach-Object { [FooterTextProbe]::InkTop($_) })
                 $range = $inkTops | Measure-Object -Minimum -Maximum
-                Assert-True ($inkTops.Count -ge 3 -and $range.Maximum - $range.Minimum -le 1) `
-                    "Footer text baselines differ at $dpi DPI ($language): $($inkTops -join ', ')"
+                Assert-True ($inkTops.Count -eq 2 -and $range.Maximum - $range.Minimum -le 1) `
+                    "Detail text baselines differ at $dpi DPI ($language): $($inkTops -join ', ')"
             }
             if ($language -eq 'en') {
                 Assert-True ($diagnostics.Text -notmatch '[\u4e00-\u9fff]') 'English diagnostics contain untranslated application text'
             }
             $path = Join-Path $OutputDirectory "$language-$scenario-$dpi.png"
             Invoke-Internal $form 'CapturePreview' @($path, "Fixture=$scenario; Dpi=$dpi")
+            if ($scenario -eq 'idle') {
+                $pin = Get-Field $form 'pinButton'
+                [FooterTextProbe]::Click($pin)
+                Assert-True (-not $form.TopMost) 'Pin action did not clear TopMost'
+                [FooterTextProbe]::AssertIcon($pin)
+                [FooterTextProbe]::Click($pin)
+                Assert-True $form.TopMost 'Pin action did not restore TopMost'
+                [FooterTextProbe]::AssertIcon($pin)
+                [FooterTextProbe]::Click((Get-Field $form 'settingsButton'))
+                [Windows.Forms.Application]::DoEvents()
+                $settings = Get-Field $form 'settingsContent'
+                Assert-True ($null -ne $settings -and -not $settings.IsDisposed) 'Settings did not open'
+                Assert-True ($settings.Width -eq [Math]::Round(316 * $scale)) 'Settings content was scaled twice'
+                Assert-Layout $settings
+                [FooterTextProbe]::Capture($settings, (Join-Path $OutputDirectory "$language-settings-$dpi.png"))
+                Invoke-Internal $form 'SendDpiTransition' @([int]$dpi)
+                Assert-True ($null -eq (Get-Field $form 'settingsContent')) 'DPI transition did not close settings before rescaling fonts'
+            }
         }
         Write-Host "PASS $language at $dpi DPI: five supply/availability scenarios, text fit, geometry, diagnostics and captures"
     }

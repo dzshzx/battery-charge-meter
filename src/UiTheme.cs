@@ -12,7 +12,8 @@ namespace BatteryChargeMeter
     {
         internal const string TextFont = "Microsoft YaHei UI";
         internal static readonly Color Surface = Color.White;
-        internal static readonly Color FooterBand = Color.FromArgb(247, 248, 249);
+        internal static readonly Color Canvas = Color.FromArgb(247, 247, 248);
+        internal static readonly Color FooterBand = Color.FromArgb(243, 243, 245);
         internal static readonly Color Hairline = Color.FromArgb(236, 236, 236);
         internal static readonly Color FooterRule = Color.FromArgb(229, 229, 229);
         internal static readonly Color Ink = Color.FromArgb(27, 27, 27);
