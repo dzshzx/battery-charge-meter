@@ -53,6 +53,14 @@ The installer regression fixture uses a short unique AppId: Inno Setup shortens
 long IDs in uninstall registry keys, so a test must not infer an unshortened
 key from an oversized ID.
 
+Footer alignment is also checked from rendered glyphs: the status, elevation
+link, language link and timestamp render the same probe string in their actual
+controls, and the resulting ink positions must agree within one physical pixel
+at every tested DPI. This caught the links' default top alignment (two pixels
+above the labels at 96 DPI), which bounding-box overlap checks did not detect.
+Both links now use vertically centered GDI text, matching the neighboring
+labels. Keyboard and mouse activation still use the native LinkLabel control.
+
 ## Upgrade compatibility
 
 A fresh installation contains `PowerMeter.exe`. When an old

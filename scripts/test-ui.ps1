@@ -14,6 +14,46 @@ if ($PSVersionTable.PSEdition -ne 'Desktop') {
 Add-Type -AssemblyName System.Windows.Forms, System.Drawing
 [Windows.Forms.Application]::EnableVisualStyles()
 [Windows.Forms.Application]::SetUnhandledExceptionMode([Windows.Forms.UnhandledExceptionMode]::ThrowException)
+Add-Type -ReferencedAssemblies System.Windows.Forms, System.Drawing @'
+using System;
+using System.Drawing;
+using System.Windows.Forms;
+public static class FooterTextProbe {
+    public static int InkTop(Control control) {
+        string text = control.Text;
+        Color back = control.BackColor, fore = control.ForeColor;
+        LinkLabel link = control as LinkLabel;
+        Color linkColor = link == null ? Color.Empty : link.LinkColor;
+        LinkBehavior behavior = link == null ? LinkBehavior.SystemDefault : link.LinkBehavior;
+        try {
+            control.Text = "Ag09";
+            control.BackColor = Color.White;
+            control.ForeColor = Color.Black;
+            if (link != null) {
+                link.LinkColor = Color.Black;
+                link.LinkBehavior = LinkBehavior.NeverUnderline;
+            }
+            using (Bitmap bitmap = new Bitmap(control.Width, control.Height)) {
+                control.DrawToBitmap(bitmap, new Rectangle(Point.Empty, bitmap.Size));
+                for (int y = 0; y < bitmap.Height; y++)
+                    for (int x = 0; x < bitmap.Width; x++) {
+                        Color pixel = bitmap.GetPixel(x, y);
+                        if (pixel.R < 96 && pixel.G < 96 && pixel.B < 96) return control.Top + y;
+                    }
+            }
+            throw new InvalidOperationException("Footer text did not render.");
+        } finally {
+            control.Text = text;
+            control.BackColor = back;
+            control.ForeColor = fore;
+            if (link != null) {
+                link.LinkColor = linkColor;
+                link.LinkBehavior = behavior;
+            }
+        }
+    }
+}
+'@
 $Executable = (Resolve-Path -LiteralPath $Executable).Path
 $assembly = [Reflection.Assembly]::LoadFile($Executable)
 $flags = [Reflection.BindingFlags]'Instance,Public,NonPublic'
@@ -140,6 +180,16 @@ try {
                 'Diagnostic expansion/collapse did not resize the content'
             Assert-True ($diagnostics.Visible -eq ($scenario -eq 'unavailable')) 'Unexpected diagnostic visibility'
             Assert-Layout $form
+            if ($scenario -eq 'idle') {
+                $footer = Get-Field $form 'footerBand'
+                $timestamp = Get-Field $form 'updatedLabel'
+                $inkTops = @($footer.Controls | Where-Object {
+                    $_.Visible -and $_.Top -eq $timestamp.Top -and $_ -is [Windows.Forms.Label]
+                } | ForEach-Object { [FooterTextProbe]::InkTop($_) })
+                $range = $inkTops | Measure-Object -Minimum -Maximum
+                Assert-True ($inkTops.Count -ge 3 -and $range.Maximum - $range.Minimum -le 1) `
+                    "Footer text baselines differ at $dpi DPI ($language): $($inkTops -join ', ')"
+            }
             if ($language -eq 'en') {
                 Assert-True ($diagnostics.Text -notmatch '[\u4e00-\u9fff]') 'English diagnostics contain untranslated application text'
             }

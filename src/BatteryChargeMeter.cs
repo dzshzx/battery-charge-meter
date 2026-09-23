@@ -760,6 +760,8 @@ namespace BatteryChargeMeter
             status.ForeColor = UiTheme.Muted;
             footerBand.Controls.Add(status);
             LinkLabel retry = new LinkLabel();
+            retry.UseCompatibleTextRendering = false;
+            retry.TextAlign = ContentAlignment.MiddleLeft;
             retry.Tag = "以管理员身份重新启动";
             retry.Text = Strings.Get("以管理员身份重新启动");
             retry.Bounds = new Rectangle(92, 44, 170, 18);

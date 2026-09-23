@@ -17,6 +17,8 @@ namespace BatteryChargeMeter
         private void BuildLanguageControls()
         {
             languageLink = new LinkLabel();
+            languageLink.UseCompatibleTextRendering = false;
+            languageLink.TextAlign = ContentAlignment.MiddleLeft;
             languageLink.Text = Strings.IsChinese ? "EN" : "中文";
             languageLink.Bounds = new Rectangle(270, 44, 42, 18);
             languageLink.Font = new Font(UiTheme.TextFont, 8f, FontStyle.Regular, GraphicsUnit.Point);
