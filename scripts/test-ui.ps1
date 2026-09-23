@@ -12,13 +12,42 @@ if ($PSVersionTable.PSEdition -ne 'Desktop') {
     return
 }
 Add-Type -AssemblyName System.Windows.Forms, System.Drawing
-[Windows.Forms.Application]::EnableVisualStyles()
-[Windows.Forms.Application]::SetUnhandledExceptionMode([Windows.Forms.UnhandledExceptionMode]::ThrowException)
 Add-Type -ReferencedAssemblies System.Windows.Forms, System.Drawing @'
 using System;
 using System.Drawing;
 using System.Windows.Forms;
 public static class FooterTextProbe {
+    public static void AssertReadoutBaseline(Control control) {
+        string text = control.Text;
+        Color color = control.ForeColor;
+        try {
+            control.Text = "88.88 W";
+            control.ForeColor = Color.Black;
+            using (Bitmap bitmap = new Bitmap(control.Width, control.Height)) {
+                control.DrawToBitmap(bitmap, new Rectangle(Point.Empty, bitmap.Size));
+                int[] bottoms = new int[bitmap.Width];
+                for (int x = 0; x < bitmap.Width; x++) {
+                    bottoms[x] = -1;
+                    for (int y = 0; y < bitmap.Height; y++) {
+                        Color pixel = bitmap.GetPixel(x, y);
+                        if (pixel.R < 128 && pixel.G < 128 && pixel.B < 128) bottoms[x] = y;
+                    }
+                }
+                int right = bitmap.Width - 1;
+                while (right >= 0 && bottoms[right] < 0) right--;
+                int unitLeft = right;
+                while (unitLeft >= 0 && bottoms[unitLeft] >= 0) unitLeft--;
+                int unitBottom = -1, numberBottom = -1;
+                for (int x = unitLeft + 1; x <= right; x++) unitBottom = Math.Max(unitBottom, bottoms[x]);
+                for (int x = 0; x < unitLeft; x++) numberBottom = Math.Max(numberBottom, bottoms[x]);
+                int tolerance = Math.Max(2, (int)Math.Ceiling(1.5 * control.Font.SizeInPoints / 44));
+                if (numberBottom < 0 || unitBottom < 0 || Math.Abs(numberBottom - unitBottom) > tolerance)
+                    throw new InvalidOperationException("Readout/unit baseline mismatch: " + numberBottom + " / " + unitBottom);
+            }
+        } finally { control.Text = text; control.ForeColor = color; }
+    }
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    public static extern IntPtr SetThreadDpiAwarenessContext(IntPtr context);
     public static void AssertHover(Control control) {
         var flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
         var leave = control.GetType().GetMethod("OnMouseLeave", flags);
@@ -115,6 +144,10 @@ public static class FooterTextProbe {
     }
 }
 '@
+$originalDpiContext = [FooterTextProbe]::SetThreadDpiAwarenessContext([IntPtr](-4))
+if ($originalDpiContext -eq [IntPtr]::Zero) { throw 'Unable to match the application Per-Monitor V2 DPI context.' }
+[Windows.Forms.Application]::EnableVisualStyles()
+[Windows.Forms.Application]::SetUnhandledExceptionMode([Windows.Forms.UnhandledExceptionMode]::ThrowException)
 $Executable = (Resolve-Path -LiteralPath $Executable).Path
 $assembly = [Reflection.Assembly]::LoadFile($Executable)
 $assembly.GetType('BatteryChargeMeter.EmbeddedUi').GetMethod('Initialize', [Reflection.BindingFlags]'Static,NonPublic').Invoke($null, @())
@@ -223,26 +256,30 @@ try {
             [Windows.Forms.Application]::DoEvents()
             $scale = $dpi / 96.0
             $diagnostics = Get-Field $form 'errorLabel'
-            $expectedHeight = if ($scenario -eq 'unavailable') { 536 } else { 476 }
+            $expectedHeight = if ($scenario -eq 'unavailable') { 504 } else { 444 }
             Assert-True ($form.AutoScrollMinSize.Height -eq [Math]::Round($expectedHeight * $scale)) `
                 'Diagnostic expansion/collapse did not resize the content'
             Assert-True ($diagnostics.Visible -eq ($scenario -eq 'unavailable')) 'Unexpected diagnostic visibility'
             Assert-Layout $form
+            $sourceValues = Get-Field $form 'sourceValues'
+            Assert-True (@($sourceValues | Where-Object Visible).Count -eq 3) 'Only the three supporting metrics should repeat below the headline'
+            $headlineIndex = if ($mode -eq 'Battery') { 0 } else { 3 }
+            Assert-True (-not $sourceValues[$headlineIndex].Visible) 'Headline metric was duplicated in the detail group'
             if ($scenario -eq 'idle') {
+                [FooterTextProbe]::AssertReadoutBaseline((Get-Field $form 'powerLabel'))
                 $expectedAverage = if ($language -eq 'en') { '30s average' } else { '30 秒均值' }
                 $expectedPeak = if ($language -eq 'en') { '60s peak' } else { '60 秒峰值' }
                 Assert-True ((Get-Field $form 'statisticsCaption').Text -eq $expectedAverage) 'Full average window should have a concise caption'
                 Assert-True ((Get-Field $form 'historyCaption').Text -eq $expectedPeak) 'Full peak window should have a concise caption'
                 [FooterTextProbe]::AssertHover((Get-Field $form 'modeSegments'))
-                $timestamp = Get-Field $form 'updatedLabel'
-                $inkTops = @(@((Get-Field $form 'detailLabel'), $timestamp) | ForEach-Object { [FooterTextProbe]::InkTop($_) })
+                $inkTops = @(@((Get-Field $form 'statisticsLabel'), (Get-Field $form 'historyLabel')) | ForEach-Object { [FooterTextProbe]::InkTop($_) })
                 $range = $inkTops | Measure-Object -Minimum -Maximum
                 Assert-True ($inkTops.Count -eq 2 -and $range.Maximum - $range.Minimum -le 1) `
-                    "Detail text baselines differ at $dpi DPI ($language): $($inkTops -join ', ')"
+                    "Statistic baselines differ at $dpi DPI ($language): $($inkTops -join ', ')"
             }
             if ($scenario -eq 'warming') {
-                Assert-True ((Get-Field $form 'statisticsCaption').Text.Contains('3s')) 'Partial average coverage must remain visible'
-                Assert-True ((Get-Field $form 'historyCaption').Text.Contains('3s')) 'Partial peak duration must remain visible'
+                Assert-True ((Get-Field $form 'statisticsCaption').Text.Contains('3/30s')) 'Partial average coverage must remain visible'
+                Assert-True ((Get-Field $form 'historyCaption').Text.Contains('3/60s')) 'Partial peak duration must remain visible'
             }
             if ($language -eq 'en') {
                 Assert-True ($diagnostics.Text -notmatch '[\u4e00-\u9fff]') 'English diagnostics contain untranslated application text'
@@ -275,4 +312,5 @@ try {
 finally {
     $form.Close()
     $form.Dispose()
+    [FooterTextProbe]::SetThreadDpiAwarenessContext($originalDpiContext) | Out-Null
 }

@@ -5,7 +5,7 @@ using System.Windows.Forms;
 namespace BatteryChargeMeter
 {
     // GDI's default glyph-overhang padding differs with font size. Remove it
-    // consistently so text, chart edges and controls share the same inset.
+    // consistently so labels and controls share the same inset.
     internal class AlignedLabel : Label
     {
         protected override void OnPaint(PaintEventArgs e)
@@ -14,6 +14,8 @@ namespace BatteryChargeMeter
                 | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix;
             if (TextAlign == ContentAlignment.MiddleRight)
                 flags |= TextFormatFlags.Right;
+            else if (TextAlign == ContentAlignment.MiddleCenter)
+                flags |= TextFormatFlags.HorizontalCenter;
             TextRenderer.DrawText(e.Graphics, Text, Font, ClientRectangle, ForeColor, flags);
         }
     }
@@ -28,23 +30,28 @@ namespace BatteryChargeMeter
             if (estimated)
                 number = number.Substring(2);
 
-            float scale = Font.SizeInPoints / 32f;
-            using (Font small = new Font("Segoe UI", Font.Size * 0.48f, FontStyle.Regular, Font.Unit))
+            float scale = Font.SizeInPoints / 44f;
+            using (Font small = new Font("Segoe UI", Font.Size * 0.34f, FontStyle.Regular, Font.Unit))
             {
                 TextFormatFlags flags = TextFormatFlags.NoPadding | TextFormatFlags.SingleLine
                     | TextFormatFlags.NoPrefix;
-                int x = 0;
-                int numberHeight = TextRenderer.MeasureText(e.Graphics, number, Font,
-                    Size.Empty, flags).Height;
+                Size numberSize = TextRenderer.MeasureText(e.Graphics, number, Font, Size.Empty, flags);
+                int prefixWidth = estimated ? TextRenderer.MeasureText(e.Graphics, "≈", small, Size.Empty, flags).Width
+                    + (int)Math.Round(8 * scale) : 0;
+                int unitWidth = watts ? TextRenderer.MeasureText(e.Graphics, "W", small, Size.Empty, flags).Width
+                    + (int)Math.Round(8 * scale) : 0;
+                int x = TextAlign == ContentAlignment.MiddleCenter
+                    ? Math.Max(0, (Width - numberSize.Width - prefixWidth - unitWidth) / 2) : 0;
+                int numberHeight = numberSize.Height;
                 int y = Math.Max(0, (Height - numberHeight) / 2);
                 int smallHeight = TextRenderer.MeasureText(e.Graphics, "W", small,
                     Size.Empty, flags).Height;
-                int smallY = y + numberHeight - smallHeight - (int)Math.Round(3 * scale);
+                int smallY = y + (int)Math.Round(Ascent(Font, e.Graphics) - Ascent(small, e.Graphics));
                 if (estimated)
                 {
-                    TextRenderer.DrawText(e.Graphics, "≈", small, new Point(x, smallY), ForeColor, flags);
-                    x += TextRenderer.MeasureText(e.Graphics, "≈", small, Size.Empty, flags).Width
-                        + (int)Math.Round(6 * scale);
+                    TextRenderer.DrawText(e.Graphics, "≈", small,
+                        new Point(x, y + (numberHeight - smallHeight) / 2), ForeColor, flags);
+                    x += prefixWidth;
                 }
                 TextRenderer.DrawText(e.Graphics, number, Font, new Point(x, y), ForeColor, flags);
                 x += TextRenderer.MeasureText(e.Graphics, number, Font, Size.Empty, flags).Width;
@@ -52,6 +59,12 @@ namespace BatteryChargeMeter
                     TextRenderer.DrawText(e.Graphics, "W", small,
                         new Point(x + (int)Math.Round(8 * scale), smallY), ForeColor, flags);
             }
+        }
+
+        private static float Ascent(Font font, Graphics graphics)
+        {
+            FontFamily family = font.FontFamily;
+            return font.GetHeight(graphics) * family.GetCellAscent(font.Style) / family.GetLineSpacing(font.Style);
         }
     }
 }

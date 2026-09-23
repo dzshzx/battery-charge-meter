@@ -116,7 +116,7 @@ namespace BatteryChargeMeter
             {
                 int hoverX = hoveredIndex == 0 ? pad : Width - pad - pillWidth;
                 using (GraphicsPath hover = WidgetPath.Rounded(new Rectangle(hoverX, pad, pillWidth, Height - 2 * pad), radius))
-                using (SolidBrush hoverBrush = new SolidBrush(UiTheme.FooterBand))
+                using (SolidBrush hoverBrush = new SolidBrush(UiTheme.Track))
                     g.FillPath(hoverBrush, hover);
             }
             int pillX = selectedIndex == 0 ? pad : Width - pad - pillWidth;

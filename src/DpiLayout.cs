@@ -147,6 +147,12 @@ namespace BatteryChargeMeter
             return (int)Math.Round(value * scale, MidpointRounding.AwayFromZero);
         }
 
+        internal static Rectangle ScaleBounds(Rectangle bounds, float scale)
+        {
+            return Rectangle.FromLTRB(ScaleValue(bounds.Left, scale), ScaleValue(bounds.Top, scale),
+                ScaleValue(bounds.Right, scale), ScaleValue(bounds.Bottom, scale));
+        }
+
         internal static Size ConstrainClientSize(
             Size contentSize, Size workingArea, Size nonClientSize)
         {

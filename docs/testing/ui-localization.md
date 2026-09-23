@@ -5,11 +5,13 @@ release assets use `PowerMeter`; the repository URL, settings key, installer
 AppId and logon-task ownership identity retain their existing values for
 compatibility. No release version is changed by this work.
 
-The normal client area is 420 × 476 logical pixels. The main reading and trend
-lead, mean and peak have separate captions and values, and a single rounded
-group holds the battery level and four aligned power-source rows. A diagnostic
-expands the client height to 536; clearing it removes both its space and
-scrollbar. The footer holds display mode, a pin toggle and Settings. Startup,
+The normal client area is 384 × 444 logical pixels. A centered 44-point reading
+leads, with the boundary caption above and battery electrical details below.
+Mean and peak form a balanced pair. A soft tonal group holds the battery level
+and the three other power boundaries, so all four remain available without
+duplicating the headline. A diagnostic expands the client height to 504;
+clearing it removes both its space and scrollbar. Display mode is at the top;
+the footer holds the timestamp, a pin toggle and Settings. Startup,
 language and elevation controls live in the settings popover. The icon uses
 Lucide battery-medium geometry; pin and settings-2 are used inside the window.
 
@@ -40,8 +42,8 @@ On 2026-09-23, verification included:
   and collapse are exercised repeatedly at each scale.
 - Startup with one sample and a three-second warm-up window are rendered too.
   Full statistics use concise captions; partial windows retain their actual
-  coverage. The plot labels its actual visible time range through Now, keeps
-  missing-sample breaks, and shows a localized hint when there is no trend yet.
+  coverage. Each mode exposes exactly three supporting rows. The tests exercise
+  mode changes, error-area expansion and DPI changes with this row layout.
 - The unselected mode segment gains a quiet hover fill and text emphasis.
   Bitmap comparisons verify the feedback appears, disappears on mouse leave,
   and never changes the selected mode by itself.
@@ -70,10 +72,15 @@ regression fixture uses a short unique AppId: Inno Setup shortens
 long IDs in uninstall registry keys, so a test must not infer an unshortened
 key from an oversized ID.
 
-Text alignment is also checked from rendered glyphs: the electrical detail and
-timestamp render the same probe string in their actual controls, and their ink
-positions must agree within one physical pixel at every tested DPI. The settings
-controls use AntdUI's button, checkbox and selector rendering.
+Text alignment is checked from rendered glyphs: the two statistic values must
+agree within one physical pixel. The large numeric readout and smaller W unit
+use font ascent metrics and are checked for a common rendered baseline. The
+settings controls use AntdUI's button, checkbox and selector rendering.
+
+The fixture host adopts the application's Per-Monitor V2 thread context before
+creating controls. Screenshots use the visible DWM frame, excluding invisible
+resize margins that PrintWindow otherwise leaves black. This keeps the native
+title bar and control rendering faithful at the host monitor's actual DPI.
 
 ## Visual references and toolkit choice
 
@@ -83,6 +90,18 @@ compact utility layout: prominent live values, coherent groups, quiet surfaces,
 and secondary operations collected into settings. The Windows
 [type ramp](https://learn.microsoft.com/en-us/windows/apps/design/signature-experiences/typography)
 informed regular labels, semibold numeric values and a smaller watt unit.
+
+Further reference review covered [Stats](https://github.com/exelban/stats),
+[BatteryBoi](https://github.com/thebarbican19/BatteryBoi), and
+[EnergyStarX](https://github.com/JasonWei512/EnergyStarX). Stats' battery panel
+separates one primary figure from supporting measurements; BatteryBoi focuses a
+small surface on one state and value; EnergyStarX keeps Windows-native controls
+and a clear central focus. The resulting meter centers the watts reading,
+reduces repeated data and uses one quiet supporting group. No normalization ring
+is used for watts because the app has no measured maximum input capacity.
+On Windows 11 the headline uses Segoe UI Variable Display; other systems fall
+back to Segoe UI. The watt unit is aligned by font ascent rather than line-box
+height, and estimates retain a neutral muted color and the approximation mark.
 
 [AntdUI](https://github.com/AntdUI/AntdUI) and
 [Krypton Toolkit](https://github.com/Krypton-Suite/Standard-Toolkit) were checked

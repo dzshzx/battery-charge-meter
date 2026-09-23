@@ -7,7 +7,7 @@ namespace BatteryChargeMeter
 {
     /// <summary>
     /// Source details render the same snapshot as the selected headline, as
-    /// four aligned name/value rows.
+    /// three supporting rows; the selected fourth value is the headline.
     /// </summary>
     internal sealed partial class MainForm
     {
@@ -20,6 +20,8 @@ namespace BatteryChargeMeter
         private Label wholeSystemName;
         private Label wholeSystemValue;
         private AntdUI.Panel sourcesPanel;
+        private readonly Label[] sourceNames = new Label[4];
+        private readonly Label[] sourceValues = new Label[4];
 
         /// <summary>
         /// Builds the source rows. Called from the constructor before
@@ -46,17 +48,37 @@ namespace BatteryChargeMeter
         {
             int y = 44 + index * 22;
 
-            nameLabel = NewLabel(caption, 14, y, 234, 22, 9f, FontStyle.Regular);
+            nameLabel = NewLabel(caption, 14, y, 184, 22, 9f, FontStyle.Regular);
             nameLabel.ForeColor = UiTheme.Muted;
             sourcesPanel.Controls.Add(nameLabel);
 
-            Label value = NewLabel("--", 248, y, 118, 22, 9.5f, FontStyle.Regular);
+            Label value = NewLabel("--", 210, y, 120, 22, 9.5f, FontStyle.Regular);
             value.Font = new Font("Segoe UI Semibold", 9.5f, FontStyle.Regular, GraphicsUnit.Point);
             value.TextAlign = ContentAlignment.MiddleRight;
             value.ForeColor = UiTheme.Ink;
             sourcesPanel.Controls.Add(value);
+            sourceNames[index] = nameLabel;
+            sourceValues[index] = value;
 
             return value;
+        }
+
+        private void LayoutSourceRows()
+        {
+            if (sourceNames[3] == null) return;
+            float scale = dpiLayout != null && dpiLayout.CurrentDpi > 0 ? dpiLayout.CurrentDpi / 96f : 1f;
+            int selected = displayMode == DisplayMode.Battery ? 0 : 3;
+            int row = 0;
+            for (int index = 0; index < sourceNames.Length; index++)
+            {
+                bool visible = index != selected;
+                sourceNames[index].Visible = visible;
+                sourceValues[index].Visible = visible;
+                if (!visible) continue;
+                int y = 44 + row++ * 22;
+                sourceNames[index].Bounds = DpiLayout.ScaleBounds(new Rectangle(14, y, 184, 22), scale);
+                sourceValues[index].Bounds = DpiLayout.ScaleBounds(new Rectangle(210, y, 120, 22), scale);
+            }
         }
 
         private void UpdatePowerSources(PowerSnapshot snapshot)
@@ -87,6 +109,7 @@ namespace BatteryChargeMeter
                 && (snapshot.Platform.Available || selected.UnavailableReason != snapshot.Platform.UnavailableReason))
                 reasons.AppendLine(Strings.Get(PowerSample.LabelFor(selected.Boundary)) + ": " + Strings.Diagnostic(selected.UnavailableReason));
             errorLabel.Text = reasons.ToString().TrimEnd();
+            LayoutSourceRows();
         }
 
         /// <summary>

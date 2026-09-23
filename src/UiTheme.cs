@@ -12,16 +12,26 @@ namespace BatteryChargeMeter
     {
         internal const string TextFont = "Microsoft YaHei UI";
         internal static readonly Color Surface = Color.White;
-        internal static readonly Color Canvas = Color.FromArgb(247, 247, 248);
-        internal static readonly Color FooterBand = Color.FromArgb(243, 243, 245);
+        internal static readonly Color Canvas = Color.White;
+        internal static readonly Color FooterBand = Color.White;
+        internal static readonly Color GroupSurface = Color.FromArgb(246, 247, 248);
         internal static readonly Color Hairline = Color.FromArgb(236, 236, 236);
         internal static readonly Color FooterRule = Color.FromArgb(229, 229, 229);
         internal static readonly Color Ink = Color.FromArgb(27, 27, 27);
         internal static readonly Color Muted = Color.FromArgb(97, 97, 97);
+        internal static readonly Color NumericMuted = Color.FromArgb(75, 75, 75);
         internal static readonly Color Faint = Color.FromArgb(112, 112, 112);
         internal static readonly Color Track = Color.FromArgb(234, 234, 234);
         internal static readonly Color ZeroLine = Color.FromArgb(200, 200, 200);
-        internal static readonly Color Chip = Color.FromArgb(234, 236, 238);
+        internal static readonly Color Chip = Color.FromArgb(240, 241, 243);
+
+        internal static Font DisplayFont(float points)
+        {
+            Font font = new Font("Segoe UI Variable Display", points, FontStyle.Regular, GraphicsUnit.Point);
+            if (font.Name == "Segoe UI Variable Display") return font;
+            font.Dispose();
+            return new Font("Segoe UI", points, FontStyle.Regular, GraphicsUnit.Point);
+        }
 
         internal static readonly Color Charging = Color.FromArgb(5, 150, 105);
         internal static readonly Color Discharging = Color.FromArgb(217, 119, 6);

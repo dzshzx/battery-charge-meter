@@ -227,10 +227,10 @@ try {
 
     $dpiMetadata = Get-Content -LiteralPath $dpiMetadataPath -Raw
     if ($dpiMetadata -notmatch 'HandledDpi=192(?=;|$)' -or
-        $dpiMetadata -notmatch 'Content=840x(?:952|1072)(?=;|$)' -or
+        $dpiMetadata -notmatch 'Content=768x(?:888|1008)(?=;|$)' -or
         $dpiMetadata -notmatch 'FormFontPixels=24(?:\.0+)?(?=;|$)' -or
-        $dpiMetadata -notmatch 'PowerFontPixels=85\.333(?=;|$)' -or
-        $dpiMetadata -notmatch 'ErrorArea=760x96(?=;|$)' -or
+        $dpiMetadata -notmatch 'PowerFontPixels=117\.333(?=;|$)' -or
+        $dpiMetadata -notmatch 'ErrorArea=688x96(?=;|$)' -or
         $dpiMetadata -notmatch 'AutoScroll=True(?=;|$)' -or
         $dpiMetadata -notmatch 'WindowPositionApplied=True(?=;|$)' -or
         $dpiMetadata -notmatch 'WindowPositionMatched=True(?=;|$)') {
@@ -239,7 +239,7 @@ try {
     if ($dpiMetadata -notmatch 'Client=(?<width>\d+)x(?<height>\d+)(?=;|$)') {
         throw "Missing DPI viewport metadata: $dpiMetadata"
     }
-    if ([int]$Matches.width -gt 840 -or [int]$Matches.height -gt 1072) {
+    if ([int]$Matches.width -gt 768 -or [int]$Matches.height -gt 1008) {
         throw "DPI viewport exceeds its scrollable content: $dpiMetadata"
     }
 
@@ -271,10 +271,10 @@ try {
 
     $dpiReturnMetadata = Get-Content -LiteralPath $dpiReturnMetadataPath -Raw
     if ($dpiReturnMetadata -notmatch 'HandledDpi=96(?=;|$)' -or
-        $dpiReturnMetadata -notmatch 'Content=420x(?:476|536)(?=;|$)' -or
+        $dpiReturnMetadata -notmatch 'Content=384x(?:444|504)(?=;|$)' -or
         $dpiReturnMetadata -notmatch 'FormFontPixels=12(?:\.0+)?(?=;|$)' -or
-        $dpiReturnMetadata -notmatch 'PowerFontPixels=42\.667(?=;|$)' -or
-        $dpiReturnMetadata -notmatch 'ErrorArea=380x48(?=;|$)' -or
+        $dpiReturnMetadata -notmatch 'PowerFontPixels=58\.667(?=;|$)' -or
+        $dpiReturnMetadata -notmatch 'ErrorArea=344x48(?=;|$)' -or
         $dpiReturnMetadata -notmatch 'WindowPositionApplied=True(?=;|$)' -or
         $dpiReturnMetadata -notmatch 'WindowPositionMatched=True(?=;|$)') {
         throw "Unexpected DPI return metadata: $dpiReturnMetadata"

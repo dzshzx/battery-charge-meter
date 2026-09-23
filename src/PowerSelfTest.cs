@@ -88,7 +88,7 @@ namespace BatteryChargeMeter
             failures += Check(log, "irregular observations use elapsed weighting and partial window", average.HasValue && Near(average.Value, -17.5) && Near(coverage, 4) && Near(history.Duration(60), 4));
             failures += Check(log, "peak retains sign at greatest magnitude", Near(history.Peak().Value, -20));
             history.Add(5, DisplayMode.Battery, supply, PowerSample.Unsupported(PowerBoundary.BatteryTerminal, "gap"));
-            failures += Check(log, "missing sample is a chart break and immediately unavailable statistics", !history.Peak().HasValue && !history.Average(out coverage).HasValue && !history.Points[3].Watts.HasValue);
+            failures += Check(log, "missing sample leaves a gap and immediately unavailable statistics", !history.Peak().HasValue && !history.Average(out coverage).HasValue && !history.Points[3].Watts.HasValue);
             history.Add(6, DisplayMode.Battery, supply, Value(-30));
             average = history.Average(out coverage);
             failures += Check(log, "missing intervals are excluded without zero fill", Near(coverage, 4) && Near(average.Value, -17.5));
@@ -109,15 +109,7 @@ namespace BatteryChargeMeter
                 history.Add(second, DisplayMode.Battery, supply, Value(second == 0 ? 40 : 10));
             average = history.Average(out coverage);
             failures += Check(log, "weighted mean clips the first interval at exact 30 second cutoff", Near(average.Value, 12) && Near(coverage, 30));
-            IList<TimedPower> visible = PowerDisplay.VisibleHistory(new TimedPower[]
-            {
-                new TimedPower { Seconds = 0, Watts = 1000 },
-                new TimedPower { Seconds = 4, Watts = 10 },
-                new TimedPower { Seconds = 62, Watts = 12 }
-            });
-            failures += Check(log, "chart excludes expired predecessor from segments and vertical scale",
-                visible.Count == 2 && Near(visible[0].Seconds, 4) && Near(visible[0].Watts.Value, 10));
-            failures += Check(log, "nonfinite sensor values cannot reach chart or tray", !Value(Double.NaN).Available && !Value(Double.PositiveInfinity).Available);
+            failures += Check(log, "nonfinite sensor values cannot reach readings or tray", !Value(Double.NaN).Available && !Value(Double.PositiveInfinity).Available);
             return failures;
         }
 

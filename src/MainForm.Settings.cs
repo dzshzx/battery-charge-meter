@@ -38,7 +38,7 @@ namespace BatteryChargeMeter
             pinButton.ToggleIconSvg = UiIcons.Pin;
             pinButton.IconToggleAnimation = 0;
             pinButton.IconSize = new Size(16, 16);
-            pinButton.Bounds = new Rectangle(264, 8, 36, 32);
+            pinButton.Bounds = new Rectangle(232, 6, 36, 32);
             pinButton.AutoToggle = true;
             pinButton.Toggle = TopMost;
             pinButton.ToggleBack = UiTheme.Chip;
@@ -56,7 +56,7 @@ namespace BatteryChargeMeter
             settingsButton = UtilityButton(Strings.Get("设置"), UiIcons.Settings);
             settingsButton.IconSize = new Size(16, 16);
             settingsButton.Tag = "设置";
-            settingsButton.Bounds = new Rectangle(316, 8, 84, 32);
+            settingsButton.Bounds = new Rectangle(280, 6, 84, 32);
             settingsButton.Click += delegate { OpenSettings(); };
             footerBand.Controls.Add(settingsButton);
         }
