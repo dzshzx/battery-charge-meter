@@ -28,6 +28,7 @@ $installerSkipReason = $null
 $failure = $null
 $installerCompilerVersion = $null
 $installerCompilerPath = $null
+$realInstallerCompilerPath = $null
 function Complete-Phase([string]$NextPhase) {
     $script:checks[$script:phase] = 'passed'
     $script:durations[$script:phase] = [math]::Round(($script:stopwatch.Elapsed - $script:phaseStarted).TotalSeconds, 3)
@@ -343,6 +344,7 @@ try {
         (Join-Path $env:ProgramFiles 'Inno Setup 6\ISCC.exe')
     ) | Where-Object { $_ -and (Test-Path -LiteralPath $_) } | Select-Object -First 1
     $usingRealInstallerCompiler = [bool]$installerCompilerPath
+    $realInstallerCompilerPath = $installerCompilerPath
     if ($usingRealInstallerCompiler) {
         $installerCompilerVersion = [Diagnostics.FileVersionInfo]::GetVersionInfo($installerCompilerPath).ProductVersion
         Write-Host "Installer verification: real Inno Setup compiler ($installerCompilerPath), including install/uninstall."
@@ -537,6 +539,12 @@ finally {
     $commit = (& git -C $repoRoot rev-parse HEAD 2>$null | Select-Object -First 1)
     $frameworkRelease = $null
     try { $frameworkRelease = (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full' -ErrorAction Stop).Release } catch {}
+    $frameworkVersion = if ($frameworkRelease -ge 533320) { '4.8.1' }
+        elseif ($frameworkRelease -ge 528040) { '4.8' }
+        elseif ($frameworkRelease -ge 461808) { '4.7.2' }
+        elseif ($frameworkRelease -ge 461308) { '4.7.1' }
+        elseif ($frameworkRelease -ge 460798) { '4.7' }
+        else { 'unknown' }
     $preparationSeconds = [double]$durations['source-and-preparation']
     $buildSeconds = [double]$durations['build']
     $report = [ordered]@{
@@ -544,9 +552,10 @@ finally {
         started_at = $started.ToString('o')
         os = [Runtime.InteropServices.RuntimeInformation]::OSDescription
         powershell = $PSVersionTable.PSVersion.ToString()
+        dotnet_framework_version = $frameworkVersion
         dotnet_framework_release = $frameworkRelease
         target_framework = '.NETFramework,Version=v4.7'
-        inno_setup = [ordered]@{ path = $installerCompilerPath; version = $installerCompilerVersion }
+        inno_setup = [ordered]@{ path = $realInstallerCompilerPath; version = $installerCompilerVersion }
         scope = if ($RequireInstaller) { 'strict-real-installer' } else { 'local-optional-installer' }
         result = if ($failure) { 'failed' } elseif ($installerSkipReason) { 'partial-installer-not-run' } else { 'passed' }
         checks = $checks
