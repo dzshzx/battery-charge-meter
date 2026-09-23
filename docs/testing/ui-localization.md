@@ -5,10 +5,10 @@ release assets use `PowerMeter`; the repository URL, settings key, installer
 AppId and logon-task ownership identity retain their existing values for
 compatibility. No release version is changed by this work.
 
-The normal client area is 420 × 468 logical pixels. The main reading and trend
+The normal client area is 420 × 476 logical pixels. The main reading and trend
 lead, mean and peak have separate captions and values, and a single rounded
 group holds the battery level and four aligned power-source rows. A diagnostic
-expands the client height to 528; clearing it removes both its space and
+expands the client height to 536; clearing it removes both its space and
 scrollbar. The footer holds display mode, a pin toggle and Settings. Startup,
 language and elevation controls live in the settings popover. The icon uses
 Lucide battery-medium geometry; pin and settings-2 are used inside the window.
@@ -38,6 +38,13 @@ On 2026-09-23, verification included:
   supplementation and unavailable platform power. Actual WinForms controls
   are checked for overlapping bounds and clipped labels. Diagnostic expansion
   and collapse are exercised repeatedly at each scale.
+- Startup with one sample and a three-second warm-up window are rendered too.
+  Full statistics use concise captions; partial windows retain their actual
+  coverage. The plot labels its actual visible time range through Now, keeps
+  missing-sample breaks, and shows a localized hint when there is no trend yet.
+- The unselected mode segment gains a quiet hover fill and text emphasis.
+  Bitmap comparisons verify the feedback appears, disappears on mouse leave,
+  and never changes the selected mode by itself.
 - Actual pin clicks toggle the window's TopMost state in both directions; its
   glyph must render in both states. The settings popover opens in each language
   and scale, and its content is checked for clipping, overlap and double scaling.

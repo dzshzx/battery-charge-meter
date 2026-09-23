@@ -14,6 +14,7 @@ namespace BatteryChargeMeter
     {
         private readonly string[] items;
         private int selectedIndex;
+        private int hoveredIndex = -1;
 
         internal event EventHandler SelectionChanged;
 
@@ -81,6 +82,22 @@ namespace BatteryChargeMeter
         protected override void OnGotFocus(EventArgs e) { base.OnGotFocus(e); Invalidate(); }
         protected override void OnLostFocus(EventArgs e) { base.OnLostFocus(e); Invalidate(); }
 
+        protected override void OnMouseMove(MouseEventArgs e)
+        {
+            base.OnMouseMove(e);
+            int index = ClientRectangle.Contains(e.Location) ? (e.X >= Width / 2 ? 1 : 0) : -1;
+            if (hoveredIndex == index) return;
+            hoveredIndex = index;
+            Invalidate();
+        }
+
+        protected override void OnMouseLeave(EventArgs e)
+        {
+            base.OnMouseLeave(e);
+            hoveredIndex = -1;
+            Invalidate();
+        }
+
         protected override void OnPaint(PaintEventArgs e)
         {
             base.OnPaint(e);
@@ -95,6 +112,13 @@ namespace BatteryChargeMeter
 
             int pad = Math.Max(2, (int)Math.Round(2 * scale));
             int pillWidth = Width / 2 - 2 * pad;
+            if (hoveredIndex >= 0 && hoveredIndex != selectedIndex)
+            {
+                int hoverX = hoveredIndex == 0 ? pad : Width - pad - pillWidth;
+                using (GraphicsPath hover = WidgetPath.Rounded(new Rectangle(hoverX, pad, pillWidth, Height - 2 * pad), radius))
+                using (SolidBrush hoverBrush = new SolidBrush(UiTheme.FooterBand))
+                    g.FillPath(hoverBrush, hover);
+            }
             int pillX = selectedIndex == 0 ? pad : Width - pad - pillWidth;
             Rectangle segment = new Rectangle(pillX, pad, pillWidth, Height - 2 * pad);
             using (GraphicsPath pill = WidgetPath.Rounded(segment, radius))
@@ -114,7 +138,7 @@ namespace BatteryChargeMeter
                     Strings.Get(items[i]),
                     Font,
                     new Rectangle(i * (Width / 2), 0, Width / 2, Height),
-                    i == selectedIndex ? UiTheme.Ink : UiTheme.Muted,
+                    i == selectedIndex || i == hoveredIndex ? UiTheme.Ink : UiTheme.Muted,
                     TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter
                         | TextFormatFlags.NoPadding);
             }

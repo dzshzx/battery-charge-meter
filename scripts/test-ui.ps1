@@ -19,6 +19,33 @@ using System;
 using System.Drawing;
 using System.Windows.Forms;
 public static class FooterTextProbe {
+    public static void AssertHover(Control control) {
+        var flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
+        var leave = control.GetType().GetMethod("OnMouseLeave", flags);
+        var move = control.GetType().GetMethod("OnMouseMove", flags);
+        var selected = control.GetType().GetProperty("SelectedIndex", flags);
+        object selection = selected.GetValue(control, null);
+        leave.Invoke(control, new object[] { EventArgs.Empty });
+        using (Bitmap before = new Bitmap(control.Width, control.Height))
+        using (Bitmap hover = new Bitmap(control.Width, control.Height))
+        using (Bitmap after = new Bitmap(control.Width, control.Height)) {
+            Rectangle bounds = new Rectangle(Point.Empty, before.Size);
+            control.DrawToBitmap(before, bounds);
+            move.Invoke(control, new object[] { new MouseEventArgs(MouseButtons.None, 0, control.Width * 3 / 4, control.Height / 2, 0) });
+            control.DrawToBitmap(hover, bounds);
+            leave.Invoke(control, new object[] { EventArgs.Empty });
+            control.DrawToBitmap(after, bounds);
+            int changes = 0;
+            for (int y = 0; y < control.Height; y++)
+                for (int x = 0; x < control.Width; x++) {
+                    if (before.GetPixel(x, y) != hover.GetPixel(x, y)) changes++;
+                    if (before.GetPixel(x, y) != after.GetPixel(x, y))
+                        throw new InvalidOperationException("Segment hover did not clear on mouse leave.");
+                }
+            if (changes == 0 || !Object.Equals(selection, selected.GetValue(control, null)))
+                throw new InvalidOperationException("Segment hover must render feedback without changing the selection.");
+        }
+    }
     public static void AssertIcon(Control control) {
         int ink = 0;
         using (Bitmap bitmap = new Bitmap(control.Width, control.Height)) {
@@ -143,7 +170,7 @@ try {
     Assert-True ($form.Text -eq $(if ($language -eq 'en') { 'Power Meter' } else { '功率计' })) 'Incorrect localized application name'
     foreach ($dpi in @(96, 144, 168, 192, 288, 96)) {
         Invoke-Internal $form 'SendDpiTransition' @([int]$dpi)
-        foreach ($scenario in @('idle', 'charging', 'discharging', 'supplemented', 'unavailable')) {
+        foreach ($scenario in @('idle', 'charging', 'discharging', 'supplemented', 'unavailable', 'starting', 'warming')) {
             $battery = New-Internal 'BatteryReading'
             $battery.SupplyState = switch ($scenario) {
                 'charging' { 'ExternalPowerCharging' }
@@ -173,7 +200,8 @@ try {
             $segments = Get-Field $form 'modeSegments'
             $segments.GetType().GetProperty('SelectedIndex', $flags).SetValue($segments, [int]($mode -eq 'Battery'), $null)
             Invoke-Internal (Get-Field $form 'history') 'Clear'
-            for ($tick = 0; $tick -le 60; $tick++) {
+            $lastTick = if ($scenario -eq 'starting') { 0 } elseif ($scenario -eq 'warming') { 3 } else { 60 }
+            for ($tick = 0; $tick -le $lastTick; $tick++) {
                 $snapshot.ElapsedSeconds = $tick
                 $platform = 19.39 + [Math]::Sin($tick * 0.43) * 2.4
                 if ($tick -eq 60) { $platform = 19.39 }
@@ -195,17 +223,26 @@ try {
             [Windows.Forms.Application]::DoEvents()
             $scale = $dpi / 96.0
             $diagnostics = Get-Field $form 'errorLabel'
-            $expectedHeight = if ($scenario -eq 'unavailable') { 528 } else { 468 }
+            $expectedHeight = if ($scenario -eq 'unavailable') { 536 } else { 476 }
             Assert-True ($form.AutoScrollMinSize.Height -eq [Math]::Round($expectedHeight * $scale)) `
                 'Diagnostic expansion/collapse did not resize the content'
             Assert-True ($diagnostics.Visible -eq ($scenario -eq 'unavailable')) 'Unexpected diagnostic visibility'
             Assert-Layout $form
             if ($scenario -eq 'idle') {
+                $expectedAverage = if ($language -eq 'en') { '30s average' } else { '30 秒均值' }
+                $expectedPeak = if ($language -eq 'en') { '60s peak' } else { '60 秒峰值' }
+                Assert-True ((Get-Field $form 'statisticsCaption').Text -eq $expectedAverage) 'Full average window should have a concise caption'
+                Assert-True ((Get-Field $form 'historyCaption').Text -eq $expectedPeak) 'Full peak window should have a concise caption'
+                [FooterTextProbe]::AssertHover((Get-Field $form 'modeSegments'))
                 $timestamp = Get-Field $form 'updatedLabel'
                 $inkTops = @(@((Get-Field $form 'detailLabel'), $timestamp) | ForEach-Object { [FooterTextProbe]::InkTop($_) })
                 $range = $inkTops | Measure-Object -Minimum -Maximum
                 Assert-True ($inkTops.Count -eq 2 -and $range.Maximum - $range.Minimum -le 1) `
                     "Detail text baselines differ at $dpi DPI ($language): $($inkTops -join ', ')"
+            }
+            if ($scenario -eq 'warming') {
+                Assert-True ((Get-Field $form 'statisticsCaption').Text.Contains('3s')) 'Partial average coverage must remain visible'
+                Assert-True ((Get-Field $form 'historyCaption').Text.Contains('3s')) 'Partial peak duration must remain visible'
             }
             if ($language -eq 'en') {
                 Assert-True ($diagnostics.Text -notmatch '[\u4e00-\u9fff]') 'English diagnostics contain untranslated application text'
@@ -231,7 +268,7 @@ try {
                 Assert-True ($null -eq (Get-Field $form 'settingsContent')) 'DPI transition did not close settings before rescaling fonts'
             }
         }
-        Write-Host "PASS $language at $dpi DPI: five supply/availability scenarios, text fit, geometry, diagnostics and captures"
+        Write-Host "PASS $language at $dpi DPI: seven reading scenarios, text fit, hover, geometry, diagnostics and captures"
     }
     }
 }
