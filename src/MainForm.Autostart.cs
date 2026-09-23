@@ -6,7 +6,7 @@ namespace BatteryChargeMeter
 {
     internal sealed partial class MainForm
     {
-        private CheckBox autostartCheckBox;
+        private AntdUI.Checkbox autostartCheckBox;
         private ToolStripMenuItem autostartMenuItem;
         private bool updatingAutostart;
         private string autostartMessage;
@@ -16,20 +16,7 @@ namespace BatteryChargeMeter
 
         private void BuildAutostartControls()
         {
-            autostartCheckBox = new CheckBox();
-            autostartCheckBox.Text = "开机自启";
-            autostartCheckBox.AutoSize = true;
-            autostartCheckBox.Font = new Font("Segoe UI", 9f, FontStyle.Regular, GraphicsUnit.Point);
-            autostartCheckBox.Location = new Point(278, 18);
-            autostartCheckBox.ForeColor = UiTheme.Muted;
-            autostartCheckBox.FlatStyle = FlatStyle.Flat;
-            autostartCheckBox.CheckedChanged += delegate
-            {
-                if (!updatingAutostart)
-                    ChangeAutostart(autostartCheckBox.Checked);
-            };
-            footerBand.Controls.Add(autostartCheckBox);
-            autostartMenuItem = new ToolStripMenuItem("开机自启（登录后）");
+            autostartMenuItem = LocalizedMenuItem("开机自启（登录后）");
             autostartMenuItem.Click += delegate { ChangeAutostart(!autostartMenuItem.Checked); };
             trayMenu.Items.Insert(3, autostartMenuItem);
             trayMenu.Opening += delegate { RefreshAutostart(); };
@@ -50,9 +37,10 @@ namespace BatteryChargeMeter
                     enabled = state.ThisCopy && state.Enabled;
                     if (state.ThisCopy && !String.IsNullOrEmpty(state.RepairReason))
                         autostartStateMessage = state.RepairReason;
-                    sourceTip.SetToolTip(autostartCheckBox, state.Exists && !state.ThisCopy
-                        ? "当前自启指向：" + state.Executable + "；勾选可确认更换。"
-                        : "以当前 Windows 用户登录后，管理员权限运行并留在托盘。移动程序后需重新启用。");
+                    if (autostartCheckBox != null && !autostartCheckBox.IsDisposed)
+                        sourceTip.SetToolTip(autostartCheckBox, state.Exists && !state.ThisCopy
+                        ? Strings.Format("当前自启指向：{0}；勾选可确认更换。", state.Executable)
+                        : Strings.Get("以当前 Windows 用户登录后，管理员权限运行并留在托盘。移动程序后需重新启用。"));
                 }
             }
             catch (Exception error)
@@ -61,11 +49,12 @@ namespace BatteryChargeMeter
                 autostartStateMessage = "自启状态读取失败：" + ErrorMessage(error);
             }
             updatingAutostart = true;
-            autostartCheckBox.CheckState = known
-                ? (enabled ? CheckState.Checked : CheckState.Unchecked)
-                : CheckState.Indeterminate;
+            if (autostartCheckBox != null && !autostartCheckBox.IsDisposed)
+                autostartCheckBox.CheckState = known
+                    ? (enabled ? CheckState.Checked : CheckState.Unchecked)
+                    : CheckState.Indeterminate;
             autostartMenuItem.Checked = enabled;
-            autostartMenuItem.ToolTipText = known ? "" : "状态读取失败，请查看主窗口中的原因。";
+            autostartMenuItem.ToolTipText = known ? "" : Strings.Get("状态读取失败，请查看主窗口中的原因。");
             updatingAutostart = false;
             if (latest != null)
                 UpdatePowerSources(latest);
@@ -84,8 +73,8 @@ namespace BatteryChargeMeter
                         AutostartState state = manager.Read();
                         bool replace = state.Exists && !state.ThisCopy;
                         if (replace && MessageBox.Show(this,
-                            "自启当前指向：\n" + state.Executable + "\n\n更换为：\n" + Application.ExecutablePath + "？",
-                            "更换自启程序", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
+                            Strings.Format("自启当前指向：\n{0}\n\n更换为：\n{1}？", state.Executable, Application.ExecutablePath),
+                            Strings.Get("更换自启程序"), MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
                             return;
                         manager.Enable(state);
                     }

@@ -13,13 +13,15 @@ $sourcePaths = @(
 )
 $manifestPath = Join-Path $sourceDir 'BatteryChargeMeter.manifest'
 $iconPath = Join-Path $sourceDir 'BatteryChargeMeter.ico'
-$outputPath = Join-Path $distDir 'BatteryChargeMeter.exe'
+$outputPath = Join-Path $distDir 'PowerMeter.exe'
 # Embedded so the portable application remains self-contained. A same-named
 # file beside the EXE takes precedence at runtime; see third_party/NOTICE.md.
 $modulePath = Join-Path $repoRoot 'third_party/IntelMSR.bin'
 $noticePath = Join-Path $repoRoot 'third_party/NOTICE.md'
 $licensePath = Join-Path $repoRoot 'third_party/LICENSE.LGPL-2.1.txt'
 $expectedModuleHash = 'd6ed85d65ab17a22f813ef98207d6d537155ee2ded5976a21cb48413c9b92e5f'
+$uiLibrary = & (Join-Path $PSScriptRoot 'restore-ui.ps1')
+$uiLicensePath = Join-Path $repoRoot 'third_party\LICENSE.Apache-2.0.txt'
 
 foreach ($resourcePath in @($modulePath, $noticePath, $licensePath, $iconPath)) {
     if (-not (Test-Path -LiteralPath $resourcePath)) {
@@ -57,10 +59,16 @@ $compilerArguments = @(
     "/resource:$modulePath,IntelMSR.bin",
     "/resource:$noticePath,THIRD_PARTY_NOTICE.md",
     "/resource:$licensePath,LGPL-2.1.txt",
+    "/resource:$uiLicensePath,Apache-2.0.txt",
+    "/resource:$repoRoot\third_party\LICENSE.Lucide.txt,Lucide-license.txt",
+    "/resource:$repoRoot\third_party\LICENSE.Ms-PL.txt,Ms-PL.txt",
+    "/resource:$uiLibrary,AntdUI.dll",
     "/out:$outputPath",
     '/reference:System.Windows.Forms.dll',
     '/reference:System.Drawing.dll',
     '/reference:System.Management.dll',
+    '/reference:System.Design.dll',
+    "/reference:$uiLibrary",
     $sourcePaths
 )
 
@@ -70,6 +78,11 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 $artifact = Get-Item -LiteralPath $outputPath
+$compatDir = Join-Path $distDir 'compat'
+New-Item -ItemType Directory -Path $compatDir | Out-Null
+& $compilerPath /nologo /target:winexe /optimize+ "/win32manifest:$manifestPath" "/win32icon:$iconPath" `
+    "/out:$compatDir\BatteryChargeMeter.exe" (Join-Path $repoRoot 'installer\LegacyLauncher.cs')
+if ($LASTEXITCODE -ne 0) { throw 'Legacy launcher compilation failed.' }
 $hash = Get-FileHash -Algorithm SHA256 -LiteralPath $outputPath
 
 Write-Host "Built: $($artifact.FullName)"

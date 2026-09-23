@@ -191,12 +191,26 @@ namespace BatteryChargeMeter
             {
                 Exists = true,
                 Executable = target,
-                ThisCopy = String.Equals(Path.GetFullPath(target), Path.GetFullPath(path), StringComparison.OrdinalIgnoreCase),
+                ThisCopy = IsCurrentCopy(target, path),
                 Enabled = enabled && correctPolicy && correctSettings,
                 Registration = document.OuterXml,
                 RepairReason = !correctPolicy || !correctSettings
                     ? "自启任务设置已变化（权限、触发条件或运行限制），请重新勾选以修复。" : null
             };
+        }
+
+        internal static bool IsCurrentCopy(string target, string path)
+        {
+            string actual = Path.GetFullPath(target);
+            string current = Path.GetFullPath(path);
+            if (String.Equals(actual, current, StringComparison.OrdinalIgnoreCase)) return true;
+            // The installer replaces the old EXE with our forwarding launcher.
+            // An arbitrary sibling or a portable copy elsewhere is not an alias.
+            if (!String.Equals(Path.GetFileName(current), "PowerMeter.exe", StringComparison.OrdinalIgnoreCase)
+                || !String.Equals(Path.GetFileName(actual), "BatteryChargeMeter.exe", StringComparison.OrdinalIgnoreCase)
+                || !String.Equals(Path.GetDirectoryName(actual), Path.GetDirectoryName(current), StringComparison.OrdinalIgnoreCase)
+                || !File.Exists(actual) || !File.Exists(current)) return false;
+            return System.Diagnostics.FileVersionInfo.GetVersionInfo(actual).FileDescription == "Power Meter legacy launcher";
         }
 
         private static bool MatchesUser(string value, string userSid)

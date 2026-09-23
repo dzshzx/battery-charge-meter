@@ -7,14 +7,10 @@ namespace BatteryChargeMeter
 {
     /// <summary>
     /// Source details render the same snapshot as the selected headline, as
-    /// four label-above-value stat columns.
+    /// three supporting rows; the selected fourth value is the headline.
     /// </summary>
     internal sealed partial class MainForm
     {
-        private const int SourceColumnWidth = 94;
-        private const int SourceNameY = 312;
-        private const int SourceValueY = 328;
-
         private readonly PowerSources powerSources = new PowerSources();
         private readonly ToolTip sourceTip = new ToolTip();
 
@@ -23,45 +19,66 @@ namespace BatteryChargeMeter
         private Label platformValue;
         private Label wholeSystemName;
         private Label wholeSystemValue;
+        private AntdUI.Panel sourcesPanel;
+        private readonly Label[] sourceNames = new Label[4];
+        private readonly Label[] sourceValues = new Label[4];
 
         /// <summary>
-        /// Builds the source columns. Called from the constructor before
+        /// Builds the source rows. Called from the constructor before
         /// <see cref="DpiLayout"/> captures the design bounds, so these controls
         /// scale with everything else.
         /// </summary>
         private void BuildPowerSourceRows()
         {
-            Label sectionTitle = NewLabel("功率来源", 24, 288, 160, 18, 9.5f, FontStyle.Bold);
-            sectionTitle.ForeColor = UiTheme.Ink;
-            Controls.Add(sectionTitle);
-
             Label unusedName;
-            batteryValue = AddSourceColumn(0, PowerSample.LabelFor(PowerBoundary.BatteryTerminal), out unusedName);
-            cpuPackageValue = AddSourceColumn(
+            batteryValue = AddSourceRow(0, PowerSample.LabelFor(PowerBoundary.BatteryTerminal), out unusedName);
+            cpuPackageValue = AddSourceRow(
                 1, PowerSample.LabelFor(PowerBoundary.CpuPackage), out unusedName);
-            platformValue = AddSourceColumn(
+            platformValue = AddSourceRow(
                 2, PowerSample.LabelFor(PowerBoundary.Platform), out unusedName);
 
-            // The last column answers the whole-machine question, which is a
+            // The last row answers the whole-machine question, which is a
             // different boundary on battery than on external power, so its
             // caption is rewritten each tick from the sample itself.
-            wholeSystemValue = AddSourceColumn(
+            wholeSystemValue = AddSourceRow(
                 3, PowerSample.LabelFor(PowerBoundary.EstimatedSystemInput), out wholeSystemName);
         }
 
-        private Label AddSourceColumn(int index, string caption, out Label nameLabel)
+        private Label AddSourceRow(int index, string caption, out Label nameLabel)
         {
-            int x = 24 + index * 99;
+            int y = 44 + index * 22;
 
-            nameLabel = NewLabel(caption, x, SourceNameY, SourceColumnWidth, 14, 8f, FontStyle.Regular);
-            nameLabel.ForeColor = UiTheme.Faint;
-            Controls.Add(nameLabel);
+            nameLabel = NewLabel(caption, 14, y, 184, 22, 9f, FontStyle.Regular);
+            nameLabel.ForeColor = UiTheme.Muted;
+            sourcesPanel.Controls.Add(nameLabel);
 
-            Label value = NewLabel("--", x, SourceValueY, SourceColumnWidth, 18, 10f, FontStyle.Bold);
+            Label value = NewLabel("--", 210, y, 120, 22, 9.5f, FontStyle.Regular);
+            value.Font = new Font("Segoe UI Semibold", 9.5f, FontStyle.Regular, GraphicsUnit.Point);
+            value.TextAlign = ContentAlignment.MiddleRight;
             value.ForeColor = UiTheme.Ink;
-            Controls.Add(value);
+            sourcesPanel.Controls.Add(value);
+            sourceNames[index] = nameLabel;
+            sourceValues[index] = value;
 
             return value;
+        }
+
+        private void LayoutSourceRows()
+        {
+            if (sourceNames[3] == null) return;
+            float scale = dpiLayout != null && dpiLayout.CurrentDpi > 0 ? dpiLayout.CurrentDpi / 96f : 1f;
+            int selected = displayMode == DisplayMode.Battery ? 0 : 3;
+            int row = 0;
+            for (int index = 0; index < sourceNames.Length; index++)
+            {
+                bool visible = index != selected;
+                sourceNames[index].Visible = visible;
+                sourceValues[index].Visible = visible;
+                if (!visible) continue;
+                int y = 44 + row++ * 22;
+                sourceNames[index].Bounds = DpiLayout.ScaleBounds(new Rectangle(14, y, 184, 22), scale);
+                sourceValues[index].Bounds = DpiLayout.ScaleBounds(new Rectangle(210, y, 120, 22), scale);
+            }
         }
 
         private void UpdatePowerSources(PowerSnapshot snapshot)
@@ -71,25 +88,28 @@ namespace BatteryChargeMeter
             Apply(platformValue, snapshot.Platform);
 
             if (snapshot.WholeSystem != null)
-                wholeSystemName.Text = PowerSample.LabelFor(snapshot.WholeSystem.Boundary);
+                wholeSystemName.Text = Strings.Get(PowerSample.LabelFor(snapshot.WholeSystem.Boundary));
+            sourceTip.SetToolTip(wholeSystemName, Strings.Get(
+                "外电：平台功率 + 带符号的电池端净功率，未含转换损耗。\n电池供电：电池端放电功率。CPU 包已包含在平台功率内。"));
             Apply(wholeSystemValue, snapshot.WholeSystem);
             System.Text.StringBuilder reasons = new System.Text.StringBuilder();
             if (!String.IsNullOrEmpty(elevationMessage))
-                reasons.AppendLine(elevationMessage);
+                reasons.AppendLine(Strings.Diagnostic(elevationMessage));
             if (!String.IsNullOrEmpty(autostartStateMessage))
-                reasons.AppendLine(autostartStateMessage);
+                reasons.AppendLine(Strings.Diagnostic(autostartStateMessage));
             else if (!String.IsNullOrEmpty(autostartMessage))
-                reasons.AppendLine(autostartMessage);
+                reasons.AppendLine(Strings.Diagnostic(autostartMessage));
             foreach (PowerSample sample in new PowerSample[] { snapshot.BatteryTerminal, snapshot.CpuPackage, snapshot.Platform })
             {
                 if (sample != null && !sample.Available)
-                    reasons.AppendLine(PowerSample.LabelFor(sample.Boundary) + "：" + sample.UnavailableReason);
+                    reasons.AppendLine(Strings.Get(PowerSample.LabelFor(sample.Boundary)) + ": " + Strings.Diagnostic(sample.UnavailableReason));
             }
             PowerSample selected = PowerDisplay.Select(snapshot, displayMode);
             if (!selected.Available && selected.Boundary != PowerBoundary.BatteryTerminal
                 && (snapshot.Platform.Available || selected.UnavailableReason != snapshot.Platform.UnavailableReason))
-                reasons.AppendLine(PowerSample.LabelFor(selected.Boundary) + "：" + selected.UnavailableReason);
+                reasons.AppendLine(Strings.Get(PowerSample.LabelFor(selected.Boundary)) + ": " + Strings.Diagnostic(selected.UnavailableReason));
             errorLabel.Text = reasons.ToString().TrimEnd();
+            LayoutSourceRows();
         }
 
         /// <summary>
@@ -108,7 +128,7 @@ namespace BatteryChargeMeter
                 target.ForeColor = UiTheme.Muted;
                 sourceTip.SetToolTip(
                     target,
-                    sample == null ? "无数据" : sample.UnavailableReason);
+                    sample == null ? Strings.Get("无数据") : Strings.Diagnostic(sample.UnavailableReason));
                 return;
             }
 
@@ -120,7 +140,7 @@ namespace BatteryChargeMeter
             target.ForeColor = sample.Kind == MeasurementKind.Estimated
                 ? UiTheme.Muted
                 : UiTheme.Ink;
-            sourceTip.SetToolTip(target, sample.Source);
+            sourceTip.SetToolTip(target, Strings.Diagnostic(sample.Source));
         }
 
         private void ShowSourceError(Label target, string message)
@@ -130,7 +150,7 @@ namespace BatteryChargeMeter
 
             target.Text = "N/A";
             target.ForeColor = UiTheme.Muted;
-            sourceTip.SetToolTip(target, message);
+            sourceTip.SetToolTip(target, Strings.Diagnostic(message));
         }
 
         private void DisposePowerSources()

@@ -1,7 +1,12 @@
-# Battery Charge Meter
+# 功率计 / Power Meter
 
 一个轻量的 Windows 笔记本功率监视器。它直接读取 Windows/ACPI 电池传感器与
 处理器能量计数器，每秒更新各口径功率；Release 同时提供免安装便携版与安装包。
+
+中文名为“功率计”，英文名为 **Power Meter**（原 Battery Charge Meter）。
+应用与安装器支持简体中文、英文，默认按系统语言选择；窗口底部的“设置”弹层
+和托盘的“语言 / Language”菜单可以即时切换，选择保存在当前用户设置中。
+GitHub 仓库地址保留 `dzshzx/battery-charge-meter`。
 
 > 功率术语、供电状态与测量类型在 `CONTEXT.md`；本页提供产品行为与发布说明，Agent 入口为 `AGENTS.md`。
 
@@ -11,10 +16,10 @@
 - 实时显示 CPU 包功率（免驱动、免提权）
 - 可选显示平台功率与估算整机输入功率（见下文“平台功率”）
 - 默认显示整机功率；可在窗口或托盘菜单切换到电池端净功率，记住当前用户的选择
-- 主数字、托盘、最近 60 秒曲线、30 秒时间加权平均和 60 秒峰值使用同一口径
+- 主数字、托盘、30 秒时间加权平均和 60 秒峰值使用同一口径
 - 最小化后隐藏到系统托盘，继续在后台监测
 - 托盘文字图标显示所选功率的整数瓦数（大于等于 99.5 W 显示 `99+`），悬停显示口径、估算标识和两位小数
-- 充电时托盘文字为白色，放电时为黄色
+- 托盘数字为白色，充电时底色为绿色，放电时为琥珀色
 - 双击托盘图标恢复窗口，右键菜单可显示窗口或退出
 - 支持 Per-Monitor V2 高 DPI，能够适配 100%–300% 缩放及跨屏切换
 
@@ -65,7 +70,7 @@
 额定功率、PD 协商功率或电池功率顶替。可用 `--power-probe` 查看本机探测结果：
 
 ```text
-BatteryChargeMeter.exe --power-probe report.txt 10
+PowerMeter.exe --power-probe report.txt 10
 ```
 
 全部命令行开关（不带参数即启动窗口）：
@@ -89,19 +94,21 @@ BatteryChargeMeter.exe --power-probe report.txt 10
 
 首次启动选择“整机功率”：插电时显示带 `≈` 的“估算整机输入功率”，拔电时显示
 “系统负载功率”。切换到“电池端净功率”后，充电为正、放电为负。主数字、托盘和
-统计同步切换；明细始终保留电池、CPU 包、平台及整机功率。CPU 包属于平台的一部分，
+统计同步切换；主读数展示所选口径，下方明细列出其余三项，合计展示电池、CPU 包、平台及整机功率。CPU 包属于平台的一部分，
 不额外加到整机估算中。电压和估算电流属于电池端，不表示充电口电压或电流。
 
 主数字显示最新读数。30 秒平均值按实际经过的时间加权；60 秒峰值按绝对值选取并
-保留符号，曲线采用同样的时间轴。采样不足时显示已覆盖时长；切换模式、供电状态
+保留符号。采样不足时显示已覆盖时长；切换模式、供电状态
 变化或采样中断超过 5 秒会重新开始统计。数据不可用时显示 `N/A`、托盘 `--`，
-曲线断开，缺失区间不参与平均；不会自动改用另一种功率或补零。
+缺失区间不参与平均；不会自动改用另一种功率或补零。
 
 电池固件的更新节奏可能比界面慢，相同读数可持续多个刷新周期；平均值用于观察
 趋势，并不提高硬件测量精度。诊断报告记录应用观察时间、供电状态、原始电池字段、
 权限、来源和采样窗口；电池管理系统内部采集时刻仍未知。
 
 显示模式保存在当前 Windows 账号的 `HKCU\Software\BatteryChargeMeter`。
+语言选择保存在同一位置的 `Language` 值中，支持 `system`、`zh-CN`、`en`。
+沿用旧设置路径、安装 AppId 和自启任务身份，因此改名后仍能读取原有设置。
 同账号 UAC 确认后仍使用同一设置；输入另一管理员账号凭据时，使用该账号的设置。
 设置读取失败使用默认整机模式，写入失败不影响本次使用。
 
@@ -109,9 +116,9 @@ BatteryChargeMeter.exe --power-probe report.txt 10
 
 从 [Releases](https://github.com/dzshzx/battery-charge-meter/releases/latest) 选择一种形式：
 
-- 下载 `BatteryChargeMeter-vX.Y.Z-windows-setup.exe`，按向导安装到当前用户并从
+- 下载 `PowerMeter-vX.Y.Z-windows-setup.exe`，按向导安装到当前用户并从
   开始菜单启动；安装本身不需要管理员权限。
-- 下载 `BatteryChargeMeter-vX.Y.Z-windows.exe`，无需安装，直接双击运行。
+- 下载 `PowerMeter-vX.Y.Z-windows.exe`，无需安装，直接双击运行。
 
 程序未使用商业代码签名证书。Windows 首次运行若显示 SmartScreen 提示，
 请先核对仓库来源，并使用所选产物旁的 `.sha256` 文件校验，再决定是否运行。
@@ -125,7 +132,7 @@ EXE manifest 继续使用 `asInvoker`，由界面启动流程主动请求提权�
 继续运行。安装包仍按当前用户安装，不要求管理员权限；完成页启动应用时才遵循上述
 请求流程。应用不会安装驱动，也不会通过提权失败反复重启。
 
-窗口底部和托盘菜单提供“开机自启（登录后）”，默认关闭。以管理员身份打开应用后
+窗口“设置”弹层和托盘菜单提供“开机自启（登录后）”，默认关闭。以管理员身份打开应用后
 勾选一次，后续登录当前 Windows 账号时自动以管理员权限运行，直接在托盘显示读数，
 无需再次确认 UAC。普通模式下启用时会提示先使用窗口里的管理员重启按钮。
 手动再次打开同一路径的程序会唤回已有窗口，重复的自启启动会直接退出。
@@ -152,7 +159,7 @@ EXE manifest 继续使用 `asInvoker`，由界面启动流程主动请求提权�
 更新版本的模块，把同名文件放在应用 EXE 同目录即可覆盖内嵌副本（详见
 `third_party/NOTICE.md`）。
 
-可用 `BatteryChargeMeter.exe --third-party-notices notices.txt` 从 EXE 提取第三方
+可用 `PowerMeter.exe --third-party-notices notices.txt` 从 EXE 提取第三方
 通知与 LGPL-2.1 全文。每个 Release 还会在 EXE 旁提供相同通知和与内嵌模块精确
 对应的 `PawnIO.Modules-0.2.10-source.zip` 源码包。
 
@@ -165,7 +172,7 @@ EXE manifest 继续使用 `asInvoker`，由界面启动流程主动请求提权�
 
 ## 配置文件
 
-当前版本不需要 `BatteryChargeMeter.exe.config`。旧版本中的这个文件不是用户设置，
+当前版本不需要 `PowerMeter.exe.config`。旧版 `BatteryChargeMeter.exe.config` 不是用户设置，
 只用于声明 CLR/.NET Framework 4.7 启动目标、兼容旧 CLR 2 激活策略，以及 WinForms
 的 Per-Monitor V2 DPI 行为。本项目没有 CLR 2 或混合模式依赖；目标框架信息现已写入
 程序集，DPI awareness 由 EXE 内嵌 manifest 声明，跨屏缩放由程序直接处理
@@ -189,8 +196,17 @@ EXE manifest 继续使用 `asInvoker`，由界面启动流程主动请求提权�
 ```
 
 脚本使用 Windows 自带的 .NET Framework C# 编译器，将应用 EXE 写入 `dist/`。
-应用图标为 `src/BatteryChargeMeter.ico`，由 `python scripts/make-icon.py`
-生成（Pillow ≥ 8.2）；修改图形后重跑该脚本并连同 ICO 一起提交。
+首次构建会从 NuGet 下载固定的 AntdUI 2.4.11 并校验 SHA-256，后续复用
+`.packages/` 中的已校验归档。其 net46 程序集内嵌在 EXE 中，运行时无需旁置 UI DLL
+或安装额外 UI 运行时。控件与 SVG 渲染许可一并内嵌并随发布通知分发。
+主程序为 `PowerMeter.exe`。`dist/compat/BatteryChargeMeter.exe` 仅用于安装升级：
+覆盖旧版时保留一个转发入口，已有快捷方式和自启任务继续启动 Power Meter，
+无需在普通权限安装时改写管理员自启任务。全新安装不放置此入口。
+便携版改名后如移动了文件，请在新程序中重新启用自启。
+安装包构建需要 Inno Setup 6.5 或更新版本；简体中文语言文件随源码提供。
+应用图标源文件为 `src/BatteryChargeMeter.svg`，使用 Lucide 的电池图形。
+运行 `uv run --with cairosvg --with pillow python scripts/make-icon.py`
+生成多尺寸 `src/BatteryChargeMeter.ico`；修改 SVG 后重跑并连同 ICO 一起提交。
 `dist/` 是本地构建目录，不纳入版本控制。
 
 ## 发布
@@ -260,3 +276,5 @@ Release 会排除本次 tag 并从远端记录重建计划；基线或目标变�
 ## 许可证
 
 本项目代码以 MIT 许可证发布（见 `LICENSE`）。内嵌的 PawnIO `IntelMSR.bin` 模块为 LGPL-2.1：其通知、许可证文本与对应源码包随 Release 资产和 `third_party/` 一并提供，见 `third_party/NOTICE.md`。
+界面使用 AntdUI（Apache-2.0）、其中包含的 SVG.NET（Ms-PL）及 Lucide 图标
+（ISC/MIT）；完整通知和许可见同一文件及 EXE 的 `--third-party-notices` 导出。

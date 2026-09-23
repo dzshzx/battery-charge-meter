@@ -37,6 +37,7 @@ namespace BatteryChargeMeter
             failures += HistoryCases(log);
             failures += StartupCases(log);
             failures += AutostartCases(log);
+            failures += LanguageCases(log);
 
             log.AppendLine();
             passed = failures == 0;
@@ -87,7 +88,7 @@ namespace BatteryChargeMeter
             failures += Check(log, "irregular observations use elapsed weighting and partial window", average.HasValue && Near(average.Value, -17.5) && Near(coverage, 4) && Near(history.Duration(60), 4));
             failures += Check(log, "peak retains sign at greatest magnitude", Near(history.Peak().Value, -20));
             history.Add(5, DisplayMode.Battery, supply, PowerSample.Unsupported(PowerBoundary.BatteryTerminal, "gap"));
-            failures += Check(log, "missing sample is a chart break and immediately unavailable statistics", !history.Peak().HasValue && !history.Average(out coverage).HasValue && !history.Points[3].Watts.HasValue);
+            failures += Check(log, "missing sample leaves a gap and immediately unavailable statistics", !history.Peak().HasValue && !history.Average(out coverage).HasValue && !history.Points[3].Watts.HasValue);
             history.Add(6, DisplayMode.Battery, supply, Value(-30));
             average = history.Average(out coverage);
             failures += Check(log, "missing intervals are excluded without zero fill", Near(coverage, 4) && Near(average.Value, -17.5));
@@ -108,15 +109,7 @@ namespace BatteryChargeMeter
                 history.Add(second, DisplayMode.Battery, supply, Value(second == 0 ? 40 : 10));
             average = history.Average(out coverage);
             failures += Check(log, "weighted mean clips the first interval at exact 30 second cutoff", Near(average.Value, 12) && Near(coverage, 30));
-            IList<TimedPower> visible = PowerDisplay.VisibleHistory(new TimedPower[]
-            {
-                new TimedPower { Seconds = 0, Watts = 1000 },
-                new TimedPower { Seconds = 4, Watts = 10 },
-                new TimedPower { Seconds = 62, Watts = 12 }
-            });
-            failures += Check(log, "chart excludes expired predecessor from segments and vertical scale",
-                visible.Count == 2 && Near(visible[0].Seconds, 4) && Near(visible[0].Watts.Value, 10));
-            failures += Check(log, "nonfinite sensor values cannot reach chart or tray", !Value(Double.NaN).Available && !Value(Double.PositiveInfinity).Available);
+            failures += Check(log, "nonfinite sensor values cannot reach readings or tray", !Value(Double.NaN).Available && !Value(Double.PositiveInfinity).Available);
             return failures;
         }
 
@@ -484,13 +477,13 @@ namespace BatteryChargeMeter
                 failures += Check(log, "charging window and tray display total, not battery or extra CPU",
                     headline.Text == "≈ 66.08 W" && whole.Text == headline.Text
                     && (string)formType.GetField("lastTrayGlyph", flags).GetValue(form) == "66"
-                    && tray.Text.Contains("估算整机输入功率") && tray.Text.Contains("≈ 66.08 W"));
+                    && tray.Text.Contains(Strings.Get("估算整机输入功率")) && tray.Text.Contains("≈ 66.08 W"));
 
                 formType.GetField("displayMode", flags).SetValue(form, DisplayMode.Battery);
                 snapshot.ElapsedSeconds = 2;
                 present.Invoke(form, new object[] { snapshot, true });
                 failures += Check(log, "battery mode changes actual headline and tray together",
-                    headline.Text == "39.08 W" && tray.Text.Contains("电池端净功率")
+                    headline.Text == "39.08 W" && tray.Text.Contains(Strings.Get("电池端净功率"))
                     && (string)formType.GetField("lastTrayGlyph", flags).GetValue(form) == "39");
 
                 formType.GetField("displayMode", flags).SetValue(form, DisplayMode.WholeSystem);
@@ -510,7 +503,7 @@ namespace BatteryChargeMeter
                 snapshot.ElapsedSeconds = 4;
                 present.Invoke(form, new object[] { snapshot, true });
                 failures += Check(log, "unplugged whole display works without platform or elevation",
-                    headline.Text == "17.50 W" && tray.Text.Contains("系统负载功率")
+                    headline.Text == "17.50 W" && tray.Text.Contains(Strings.Get("系统负载功率"))
                     && (string)formType.GetField("lastTrayGlyph", flags).GetValue(form) == "18");
             }
             return failures;
@@ -525,6 +518,29 @@ namespace BatteryChargeMeter
 
             return Check(log, "300 percent layout stays reachable on a 1080p display",
                 viewport.Width == 1290 && viewport.Height == 985);
+        }
+
+        private static int LanguageCases(StringBuilder log)
+        {
+            int failures = Check(log, "language preference overrides the system, with safe fallback",
+                Strings.Resolve("en", "zh-CN") == "en"
+                && Strings.Resolve("zh-CN", "en-US") == "zh-CN"
+                && Strings.Resolve("system", "zh-TW") == "zh-CN"
+                && Strings.Resolve("invalid", "fr-FR") == "en");
+            string saved = Strings.Preference;
+            try
+            {
+                const string cached = "需要以管理员身份运行才能读取平台功率";
+                Strings.Select("en", false);
+                failures += Check(log, "English branding and cached diagnostic presentation",
+                    Strings.AppName == "Power Meter" && Strings.Diagnostic(cached) == "Run as administrator to read platform power"
+                    && Strings.Diagnostic("EMI 初始化失败: C:\\测试") == "EMI initialization failed: C:\\测试");
+                Strings.Select("zh-CN", false);
+                failures += Check(log, "Chinese branding and diagnostics switch back without driver restart",
+                    Strings.AppName == "功率计" && Strings.Diagnostic(cached) == cached);
+            }
+            finally { Strings.Select(saved == "en" || saved == "zh-CN" ? saved : "system", false); }
+            return failures;
         }
 
         private static int EmiMetadataCases(StringBuilder log)

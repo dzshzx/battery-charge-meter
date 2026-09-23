@@ -43,13 +43,13 @@ foreach ($requiredPath in $requiredPaths) {
 New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
 $resolvedOutputDirectory = (Resolve-Path -LiteralPath $OutputDirectory).Path
 
-$binaryName = "BatteryChargeMeter-$Tag-windows.exe"
+$binaryName = "PowerMeter-$Tag-windows.exe"
 $binaryPath = Join-Path $resolvedOutputDirectory $binaryName
 $checksumPath = "$binaryPath.sha256"
-$installerName = "BatteryChargeMeter-$Tag-windows-setup.exe"
+$installerName = "PowerMeter-$Tag-windows-setup.exe"
 $installerPath = Join-Path $resolvedOutputDirectory $installerName
 $installerChecksumPath = "$installerPath.sha256"
-$noticesPath = Join-Path $resolvedOutputDirectory 'BatteryChargeMeter-THIRD-PARTY-NOTICES.txt'
+$noticesPath = Join-Path $resolvedOutputDirectory 'PowerMeter-THIRD-PARTY-NOTICES.txt'
 $sourceBundlePath = Join-Path $resolvedOutputDirectory 'PawnIO.Modules-0.2.10-source.zip'
 
 if ($includePortable) {
@@ -95,6 +95,7 @@ if ($includeInstaller) {
         '/Q',
         "/DAppVersion=$appVersion",
         "/DSourceExe=$resolvedExecutable",
+        "/DLegacyLauncher=$repoRoot\dist\compat\BatteryChargeMeter.exe",
         "/DNoticePath=$noticesPath",
         "/DLicensePath=$licenseSource",
         "/DIconPath=$repoRoot\src\BatteryChargeMeter.ico",

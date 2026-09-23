@@ -57,6 +57,11 @@ _Avoid_: charging flag, AC status, battery mode
 | Unavailable | `BATTERY UNAVAILABLE` | No battery status at all | Unavailable with reason |
 | Inconsistent | `BATTERY STATE INVALID` | Contradictory flags (charging and discharging, or charging without external power) | Unavailable with reason; never guessed |
 
+The captions above are the stable supply-profile diagnostic vocabulary. The
+Power Meter (功率计) interface presents localized Chinese or English captions;
+switching language does not change the supply state, boundary, measurement
+kind, sign convention or history window.
+
 **UI Accent Language**:
 Hue is reserved for the supply state: Charging renders emerald (`#059669`, also the app icon), Discharging renders amber (`#D97706`), Idle carries no hue and stays neutral ink — with no battery flow there is nothing to signal — and Error renders red (`#DC2626`). The tray badge uses the same mapping as a solid tile, with neutral gray for idle and error. Estimated figures stay muted regardless of accent, and structural surfaces (bands, dividers, tracks) never take a hue.
 

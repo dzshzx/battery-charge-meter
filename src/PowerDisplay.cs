@@ -134,21 +134,6 @@ namespace BatteryChargeMeter
 
     internal static class PowerDisplay
     {
-        internal static IList<TimedPower> VisibleHistory(IList<TimedPower> history)
-        {
-            List<TimedPower> visible = new List<TimedPower>();
-            if (history.Count == 0)
-                return visible;
-
-            double cutoff = history[history.Count - 1].Seconds - 60;
-            foreach (TimedPower point in history)
-            {
-                if (point.Seconds >= cutoff)
-                    visible.Add(point);
-            }
-            return visible;
-        }
-
         internal static PowerSample Select(PowerSnapshot snapshot, DisplayMode mode)
         {
             return mode == DisplayMode.Battery ? snapshot.BatteryTerminal : snapshot.WholeSystem;

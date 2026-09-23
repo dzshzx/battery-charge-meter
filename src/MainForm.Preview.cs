@@ -102,7 +102,19 @@ namespace BatteryChargeMeter
 
                 if (!printed)
                     DrawToBitmap(bitmap, new Rectangle(Point.Empty, bitmap.Size));
-                bitmap.Save(path, ImageFormat.Png);
+                // GetWindowRect includes invisible resize margins. PrintWindow
+                // leaves those black; publish the visible DWM frame instead.
+                NativeMethods.Rect frame;
+                Rectangle visible = new Rectangle(Point.Empty, bitmap.Size);
+                if (NativeMethods.DwmGetWindowAttribute(Handle, 9, out frame,
+                    Marshal.SizeOf(typeof(NativeMethods.Rect))) == 0)
+                {
+                    Rectangle bounds = Rectangle.FromLTRB(frame.Left - rectangle.Left, frame.Top - rectangle.Top,
+                        frame.Right - rectangle.Left, frame.Bottom - rectangle.Top);
+                    if (bounds.Width > 0 && bounds.Height > 0 && visible.Contains(bounds)) visible = bounds;
+                }
+                using (Bitmap framed = bitmap.Clone(visible, PixelFormat.Format32bppArgb))
+                    framed.Save(path, ImageFormat.Png);
             }
 
             bool positionMatched = rectangle.Left == lastSuggestedPosition.X

@@ -86,7 +86,7 @@ jobs:
           $tag = '${{ steps.version.outputs.tag }}'
           $package = ./scripts/package-release.ps1 `
             -Tag $tag `
-            -ExecutablePath 'dist/BatteryChargeMeter.exe' `
+            -ExecutablePath 'dist/PowerMeter.exe' `
             -OutputDirectory $env:RUNNER_TEMP `
             -Formats 'Portable', 'Installer'
 
@@ -107,7 +107,7 @@ jobs:
             '${{ steps.package.outputs.checksum }}#SHA-256 checksum' `
             '${{ steps.package.outputs.installer }}#Windows installer' `
             '${{ steps.package.outputs.installer_checksum }}#Installer SHA-256 checksum' `
-            '${{ steps.package.outputs.notices }}#Third-party notices and LGPL-2.1' `
+            '${{ steps.package.outputs.notices }}#Third-party notices and licenses' `
             '${{ steps.package.outputs.source_bundle }}#Corresponding PawnIO.Modules source' `
             --repo $env:GITHUB_REPOSITORY `
             --verify-tag `
