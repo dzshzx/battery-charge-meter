@@ -18,6 +18,8 @@ commands are in `README.md`, and PawnIO obligations in `third_party/NOTICE.md`.
 - Verification entry: `pwsh -NoProfile -File .\scripts\test.ps1` from a
   Windows-local checkout (.NET Framework rejects WSL UNC paths). With ISCC it
   tests a real per-user install/uninstall; otherwise only packaging inputs.
+  CI and Release pass `-RequireInstaller`, so missing ISCC fails. The JSON
+  report at `dist/test-report.json` marks unrun real-installer acceptance.
   Local host and UI acceptance requirements are in `docs/testing/ui-localization.md`.
 - Changes use a task branch and PR. A master merge does not publish: an
   annotated `vX.Y.Z` release tag requires manifest `X.Y.Z.0` and passing CI at
