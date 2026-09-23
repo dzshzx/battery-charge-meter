@@ -154,7 +154,7 @@ namespace BatteryChargeMeter
             Text = Strings.AppName;
             AutoScaleMode = AutoScaleMode.None;
             AutoScroll = true;
-            ClientSize = new Size(384, 504);
+            ClientSize = new Size(384, 528);
             FormBorderStyle = FormBorderStyle.FixedSingle;
             MaximizeBox = false;
             StartPosition = FormStartPosition.CenterScreen;
@@ -175,8 +175,8 @@ namespace BatteryChargeMeter
             title.ForeColor = UiTheme.Muted;
             title.TextAlign = ContentAlignment.MiddleCenter;
 
-            stateLabel = NewLabel("正在读取", 220, 16, 144, 28, 9f, FontStyle.Regular);
-            stateLabel.TextAlign = ContentAlignment.MiddleRight;
+            stateLabel = NewLabel("正在读取", 20, 168, 344, 20, 9f, FontStyle.Regular);
+            stateLabel.TextAlign = ContentAlignment.MiddleCenter;
 
             powerLabel = new PowerReadout();
             powerLabel.Text = "--.-- W";
@@ -185,38 +185,38 @@ namespace BatteryChargeMeter
             powerLabel.TextAlign = ContentAlignment.MiddleCenter;
             powerLabel.ForeColor = UiTheme.Charging;
 
-            detailLabel = NewLabel("", 20, 168, 344, 20, 9f, FontStyle.Regular);
+            detailLabel = NewLabel("", 20, 192, 344, 20, 9f, FontStyle.Regular);
             detailLabel.ForeColor = UiTheme.Muted;
             detailLabel.TextAlign = ContentAlignment.MiddleCenter;
             updatedLabel = NewLabel("--:--:--", 20, 12, 160, 20, 9f, FontStyle.Regular);
             updatedLabel.ForeColor = UiTheme.Faint;
 
-            statisticsCaption = NewLabel("", 32, 204, 144, 18, 9f, FontStyle.Regular);
+            statisticsCaption = NewLabel("", 32, 228, 144, 18, 9f, FontStyle.Regular);
             statisticsCaption.ForeColor = UiTheme.Faint;
             statisticsCaption.TextAlign = ContentAlignment.MiddleCenter;
-            historyCaption = NewLabel("", 208, 204, 144, 18, 9f, FontStyle.Regular);
+            historyCaption = NewLabel("", 208, 228, 144, 18, 9f, FontStyle.Regular);
             historyCaption.ForeColor = UiTheme.Faint;
             historyCaption.TextAlign = ContentAlignment.MiddleCenter;
             Controls.Add(statisticsCaption);
             Controls.Add(historyCaption);
 
-            statisticsLabel = NewLabel("", 32, 228, 144, 26, 14f, FontStyle.Regular);
+            statisticsLabel = NewLabel("", 32, 252, 144, 26, 14f, FontStyle.Regular);
             statisticsLabel.Font = new Font("Segoe UI Semibold", 14f, FontStyle.Regular, GraphicsUnit.Point);
             statisticsLabel.ForeColor = UiTheme.NumericMuted;
             statisticsLabel.TextAlign = ContentAlignment.MiddleCenter;
 
-            historyLabel = NewLabel("", 208, 228, 144, 26, 14f, FontStyle.Regular);
+            historyLabel = NewLabel("", 208, 252, 144, 26, 14f, FontStyle.Regular);
             historyLabel.Font = new Font("Segoe UI Semibold", 14f, FontStyle.Regular, GraphicsUnit.Point);
             historyLabel.ForeColor = UiTheme.NumericMuted;
             historyLabel.TextAlign = ContentAlignment.MiddleCenter;
 
             Panel statisticsRule = new Panel();
             statisticsRule.BackColor = UiTheme.Hairline;
-            statisticsRule.Bounds = new Rectangle(192, 208, 1, 40);
+            statisticsRule.Bounds = new Rectangle(192, 232, 1, 40);
             Controls.Add(statisticsRule);
 
             sourcesPanel = new AntdUI.Panel();
-            sourcesPanel.Bounds = new Rectangle(20, 272, 344, 118);
+            sourcesPanel.Bounds = new Rectangle(20, 296, 344, 118);
             sourcesPanel.BackColor = UiTheme.Canvas;
             sourcesPanel.Back = UiTheme.GroupSurface;
             sourcesPanel.Radius = 10;
@@ -248,7 +248,7 @@ namespace BatteryChargeMeter
             errorLabel = new TextBox();
             errorLabel.Multiline = true;
             errorLabel.AutoSize = false;
-            errorLabel.Bounds = new Rectangle(20, 400, 344, 48);
+            errorLabel.Bounds = new Rectangle(20, 424, 344, 48);
             errorLabel.ReadOnly = true;
             errorLabel.ScrollBars = ScrollBars.Vertical;
             errorLabel.BorderStyle = BorderStyle.None;
@@ -259,7 +259,7 @@ namespace BatteryChargeMeter
 
             footerBand = new Panel();
             footerBand.BackColor = UiTheme.FooterBand;
-            footerBand.Bounds = new Rectangle(0, 460, 384, 44);
+            footerBand.Bounds = new Rectangle(0, 484, 384, 44);
             footerBand.Controls.Add(updatedLabel);
 
             Panel footerRule = new Panel();
@@ -269,7 +269,7 @@ namespace BatteryChargeMeter
 
             modeSegments = new SegmentedControl("整机功率", "电池端");
             modeSegments.Font = new Font(UiTheme.TextFont, 9f, FontStyle.Regular, GraphicsUnit.Point);
-            modeSegments.Bounds = new Rectangle(20, 16, 188, 28);
+            modeSegments.Bounds = new Rectangle(98, 16, 188, 28);
             modeSegments.SelectedIndex = displayMode == DisplayMode.Battery ? 1 : 0;
             modeSegments.SelectionChanged += delegate
             {

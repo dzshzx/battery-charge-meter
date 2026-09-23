@@ -5,11 +5,12 @@ release assets use `PowerMeter`; the repository URL, settings key, installer
 AppId and logon-task ownership identity retain their existing values for
 compatibility. No release version is changed by this work.
 
-The normal client area is 384 × 444 logical pixels. A centered 44-point reading
-leads, with the boundary caption above and battery electrical details below.
+The normal client area is 384 × 468 logical pixels. A centered 44-point reading
+leads, with the boundary caption above, followed by the supply state and battery
+electrical details below.
 Mean and peak form a balanced pair. A soft tonal group holds the battery level
 and the three other power boundaries, so all four remain available without
-duplicating the headline. A diagnostic expands the client height to 504;
+duplicating the headline. A diagnostic expands the client height to 528;
 clearing it removes both its space and scrollbar. Display mode is at the top;
 the footer holds the timestamp, a pin toggle and Settings. Startup,
 language and elevation controls live in the settings popover. The icon uses

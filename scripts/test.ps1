@@ -227,7 +227,7 @@ try {
 
     $dpiMetadata = Get-Content -LiteralPath $dpiMetadataPath -Raw
     if ($dpiMetadata -notmatch 'HandledDpi=192(?=;|$)' -or
-        $dpiMetadata -notmatch 'Content=768x(?:888|1008)(?=;|$)' -or
+        $dpiMetadata -notmatch 'Content=768x(?:936|1056)(?=;|$)' -or
         $dpiMetadata -notmatch 'FormFontPixels=24(?:\.0+)?(?=;|$)' -or
         $dpiMetadata -notmatch 'PowerFontPixels=117\.333(?=;|$)' -or
         $dpiMetadata -notmatch 'ErrorArea=688x96(?=;|$)' -or
@@ -239,7 +239,7 @@ try {
     if ($dpiMetadata -notmatch 'Client=(?<width>\d+)x(?<height>\d+)(?=;|$)') {
         throw "Missing DPI viewport metadata: $dpiMetadata"
     }
-    if ([int]$Matches.width -gt 768 -or [int]$Matches.height -gt 1008) {
+    if ([int]$Matches.width -gt 768 -or [int]$Matches.height -gt 1056) {
         throw "DPI viewport exceeds its scrollable content: $dpiMetadata"
     }
 
@@ -271,7 +271,7 @@ try {
 
     $dpiReturnMetadata = Get-Content -LiteralPath $dpiReturnMetadataPath -Raw
     if ($dpiReturnMetadata -notmatch 'HandledDpi=96(?=;|$)' -or
-        $dpiReturnMetadata -notmatch 'Content=384x(?:444|504)(?=;|$)' -or
+        $dpiReturnMetadata -notmatch 'Content=384x(?:468|528)(?=;|$)' -or
         $dpiReturnMetadata -notmatch 'FormFontPixels=12(?:\.0+)?(?=;|$)' -or
         $dpiReturnMetadata -notmatch 'PowerFontPixels=58\.667(?=;|$)' -or
         $dpiReturnMetadata -notmatch 'ErrorArea=344x48(?=;|$)' -or

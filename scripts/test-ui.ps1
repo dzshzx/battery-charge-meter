@@ -256,7 +256,7 @@ try {
             [Windows.Forms.Application]::DoEvents()
             $scale = $dpi / 96.0
             $diagnostics = Get-Field $form 'errorLabel'
-            $expectedHeight = if ($scenario -eq 'unavailable') { 504 } else { 444 }
+            $expectedHeight = if ($scenario -eq 'unavailable') { 528 } else { 468 }
             Assert-True ($form.AutoScrollMinSize.Height -eq [Math]::Round($expectedHeight * $scale)) `
                 'Diagnostic expansion/collapse did not resize the content'
             Assert-True ($diagnostics.Visible -eq ($scenario -eq 'unavailable')) 'Unexpected diagnostic visibility'
