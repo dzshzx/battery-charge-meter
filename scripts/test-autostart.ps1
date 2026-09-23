@@ -272,7 +272,10 @@ try {
 finally {
     if ($lease) { $lease.Dispose() }
     # Exact generated name and exact temporary executable paths only.
-    foreach ($process in @(Get-TestProcesses)) { Stop-Process -Id $process.ProcessId -Force -ErrorAction SilentlyContinue }
+    foreach ($process in @(Get-TestProcesses)) {
+        Stop-Process -Id $process.ProcessId -Force -PassThru -ErrorAction SilentlyContinue |
+            Wait-Process -Timeout 10
+    }
     try { $folder.DeleteTask($taskName, 0) } catch {
         $cleanupError = $_.Exception
         while ($cleanupError.InnerException) { $cleanupError = $cleanupError.InnerException }
