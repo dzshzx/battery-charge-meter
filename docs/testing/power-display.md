@@ -14,7 +14,7 @@ system load remains available without PawnIO.
 ## Automated coverage
 
 - Power/supply-state derivation, sign, missing sources and nonfinite values.
-- Real elapsed-time weighting, 30-second average, 60-second peak, chart expiry,
+- Real elapsed-time weighting, 30-second average, 60-second peak, sample expiry,
   missing intervals and reset after a supply/mode change or long sampling gap.
 - Startup routing with injected elevation success, cancellation and failure;
   already-elevated and opt-out launches; malformed CLI arguments exit with code 2.
@@ -56,7 +56,7 @@ Use a separately copied development EXE; keep the installed release intact.
    window/tray, and the new process has an elevated token. Driver absence must
    produce an explicit reason without another elevation loop.
 3. Change modes through both the selector and tray menu. Check the labels, number,
-   menu checkmark, graph reset and saved mode after relaunch. When using another
+   menu checkmark, statistics reset and saved mode after relaunch. When using another
    administrator's credentials, preferences belong to that Windows account.
 4. Check 100%, 175% and 300% scaling and a return to 100%. Controls remain reachable
    on a constrained screen; error messages remain readable/scrollable.
