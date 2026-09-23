@@ -350,17 +350,22 @@ try {
         # preprocessor instead, so a Chocolatey shim cannot supply the version.
         $versionProbePath = Join-Path $packageDir 'compiler-version.iss'
         @'
-#pragma message "ISCC_VERSION=" + VersionToStr(Ver)
+#pragma message "ISCC_VERSION_PACKED=" + Str(Ver)
 [Setup]
 AppName=CompilerVersionProbe
 AppVersion=1
 DefaultDirName={autopf}\CompilerVersionProbe
 '@ | Set-Content -LiteralPath $versionProbePath -Encoding utf8
         $versionOutput = (& $installerCompilerPath '/O-' $versionProbePath 2>&1 | Out-String)
-        if ($LASTEXITCODE -ne 0 -or $versionOutput -notmatch 'ISCC_VERSION=(?<version>\d+\.\d+\.\d+\.\d+)') {
+        if ($LASTEXITCODE -ne 0 -or $versionOutput -notmatch 'ISCC_VERSION_PACKED=(?<version>\d+)') {
             throw "Inno Setup compiler version probe failed: $versionOutput"
         }
-        $installerCompilerVersion = $Matches.version
+        $packedVersion = [long]$Matches.version
+        $installerCompilerVersion = '{0}.{1}.{2}.{3}' -f `
+            (($packedVersion -shr 24) -band 255),
+            (($packedVersion -shr 16) -band 255),
+            (($packedVersion -shr 8) -band 255),
+            ($packedVersion -band 255)
         Write-Host "Installer verification: real Inno Setup compiler ($installerCompilerPath), including install/uninstall."
     } else {
         $installerSkipReason = 'Inno Setup ISCC.exe is unavailable; real installer creation and per-user install/uninstall were not executed.'
