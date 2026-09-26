@@ -372,6 +372,15 @@ DefaultDirName={autopf}\CompilerVersionProbe
         if ($RequireInstaller) { throw $installerSkipReason }
         Write-Warning $installerSkipReason
     }
+    # Setup refreshes, and uninstall removes, the protected logon copy below
+    # Program Files; unattended, that needs an already elevated token.
+    $installerLifecycleElevated = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
+        [Security.Principal.WindowsBuiltInRole]::Administrator)
+    if ($usingRealInstallerCompiler -and -not $installerLifecycleElevated) {
+        $installerSkipReason = 'The real installer lifecycle needs an elevated token (protected logon copy below Program Files); per-user install/uninstall was not executed.'
+        if ($RequireInstaller) { throw $installerSkipReason }
+        Write-Warning $installerSkipReason
+    }
 
     if (-not $installerCompilerPath) {
         $installerCompilerPath = Join-Path $packageDir 'fake-iscc.ps1'
@@ -483,7 +492,7 @@ Set-Content -LiteralPath (Join-Path $outputDirectory "$outputBaseName.exe") -Val
     }
 
     Complete-Phase 'real-installer-install-uninstall'
-    if ($usingRealInstallerCompiler) {
+    if ($usingRealInstallerCompiler -and $installerLifecycleElevated) {
         & (Join-Path $PSScriptRoot 'test-installer-uninstall.ps1') `
             -InstallerCompilerPath $installerCompilerPath `
             -ExecutablePath $executableArtifact.FullName

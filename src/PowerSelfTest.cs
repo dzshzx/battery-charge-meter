@@ -191,24 +191,44 @@ namespace BatteryChargeMeter
                 cleanup.Valid && cleanup.Command != "gui" && calls == 0);
             failures += Check(log, "autostart rejects extra arguments",
                 !StartupRoute.Parse(new string[] { "--autostart", "extra" }).Valid);
+            StartupRoute sync = StartupRoute.Parse(new string[] { "--sync-autostart" });
+            Startup.Route(sync, false, delegate
+            {
+                calls++;
+                return new ElevationResult { Started = true };
+            });
+            failures += Check(log, "installer startup synchronization is non-GUI and never elevates",
+                sync.Valid && sync.Command == "--sync-autostart" && calls == 0
+                && !StartupRoute.Parse(new string[] { "--sync-autostart", "extra" }).Valid);
             string sid = "S-1-5-21-111-222-333-1001";
             string path = @"C:\Test & 测试\Meter 1.2.1.exe";
-            string xml = AutostartManager.BuildXml(path, sid);
-            AutostartState state = AutostartManager.Inspect(xml, path, sid);
-            failures += Check(log, "logon task roundtrips escaped exact executable path and elevated interactive user policy",
-                state.Exists && state.Enabled && state.ThisCopy && state.Executable == path
+            string xml = AutostartManager.BuildXml(SelfTestCopy(sid), sid);
+            AutostartState state = Inspect(xml, path, sid);
+            failures += Check(log, "logon task roundtrips escaped protected copy path and elevated interactive user policy",
+                state.Exists && state.Enabled && state.ThisCopy && state.Protected
+                && state.Executable == path && state.Target == SelfTestCopy(sid)
+                && xml.Contains("<WorkingDirectory>" + System.Security.SecurityElement.Escape(System.IO.Path.GetDirectoryName(SelfTestCopy(sid))) + "</WorkingDirectory>")
                 && xml.Contains("<DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>")
                 && xml.Contains("<StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>")
                 && xml.Contains("<ExecutionTimeLimit>PT0S</ExecutionTimeLimit>")
                 && xml.Contains("<MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>"));
-            failures += Check(log, "other copies are distinguished without registry booleans",
-                !AutostartManager.Inspect(xml, @"C:\Other\Meter.exe", sid).ThisCopy);
+            failures += Check(log, "other copies are distinguished by the protected copy's recorded source",
+                !AutostartManager.Inspect(xml, @"C:\Other\Meter.exe", sid, SelfTestCopy(sid), path).ThisCopy
+                && !AutostartManager.Inspect(xml, path, sid, SelfTestCopy(sid), null).ThisCopy);
+            AutostartState unprotected = Inspect(AutostartManager.BuildXml(path, sid), path, sid);
+            failures += Check(log, "elevated task running a user-writable file is never reported as working startup",
+                unprotected.Exists && unprotected.ThisCopy && !unprotected.Protected && !unprotected.Enabled
+                && !String.IsNullOrEmpty(unprotected.RepairReason));
+            failures += Check(log, "protected copy identifies itself by the installation it was taken from",
+                ProtectedCopy.IdentityFor(@"C:\Elsewhere\PowerMeter.exe", sid) == @"C:\Elsewhere\PowerMeter.exe"
+                && ProtectedCopy.IdentityFor(@"C:\Missing\" + sid + @"\Other.exe", sid) == @"C:\Missing\" + sid + @"\Other.exe"
+                && ProtectedCopy.IdentityFor(@"C:\Missing\" + sid + @"\PowerMeter.exe", sid) == @"C:\Missing\" + sid + @"\PowerMeter.exe");
             failures += Check(log, "disabled task is read as disabled",
-                !AutostartManager.Inspect(xml.Replace("<Enabled>true</Enabled>", "<Enabled>false</Enabled>"), path, sid).Enabled);
+                !Inspect(xml.Replace("<Enabled>true</Enabled>", "<Enabled>false</Enabled>"), path, sid).Enabled);
             bool foreignRejected = false;
             try
             {
-                AutostartManager.Inspect(xml.Replace("BatteryChargeMeter.Logon.v1", "someone-else"), path, sid);
+                Inspect(xml.Replace("BatteryChargeMeter.Logon.v1", "someone-else"), path, sid);
             }
             catch (InvalidOperationException)
             {
@@ -218,12 +238,13 @@ namespace BatteryChargeMeter
             using (System.Security.Principal.WindowsIdentity identity = System.Security.Principal.WindowsIdentity.GetCurrent())
             {
                 string currentSid = identity.User.Value;
-                string accountXml = AutostartManager.BuildXml(path, currentSid).Replace(currentSid,
-                    System.Security.SecurityElement.Escape(identity.Name));
+                string accountXml = AutostartManager.BuildXml(SelfTestCopy(currentSid), currentSid).Replace(
+                    "<UserId>" + currentSid + "</UserId>",
+                    "<UserId>" + System.Security.SecurityElement.Escape(identity.Name) + "</UserId>");
                 failures += Check(log, "scheduler account-name normalization preserves exact user identity",
-                    AutostartManager.Inspect(accountXml, path, currentSid).Enabled);
+                    Inspect(accountXml, path, currentSid).Enabled);
                 failures += Check(log, "different logon account cannot be treated as current-user startup",
-                    !AutostartManager.Inspect(xml.Replace("<LogonTrigger><Enabled>true</Enabled><UserId>" + sid,
+                    !Inspect(xml.Replace("<LogonTrigger><Enabled>true</Enabled><UserId>" + sid,
                         "<LogonTrigger><Enabled>true</Enabled><UserId>" + currentSid), path, sid).Enabled);
             }
             string[] drift = new string[]
@@ -237,14 +258,14 @@ namespace BatteryChargeMeter
             };
             foreach (string changed in drift)
             {
-                AutostartState altered = AutostartManager.Inspect(changed, path, sid);
+                AutostartState altered = Inspect(changed, path, sid);
                 failures += Check(log, "changed task policy requires explicit repair",
                     !altered.Enabled && !String.IsNullOrEmpty(altered.RepairReason));
             }
             bool staleRejected = false;
             try
             {
-                AutostartManager.RequireUnchanged(state, AutostartManager.Inspect(
+                AutostartManager.RequireUnchanged(state, Inspect(
                     AutostartManager.BuildXml(@"C:\Third copy\Meter.exe", sid), path, sid));
             }
             catch (InvalidOperationException)
@@ -252,8 +273,29 @@ namespace BatteryChargeMeter
                 staleRejected = true;
             }
             failures += Check(log, "confirmation for copy A cannot authorize overwriting concurrent copy C", staleRejected);
-            AutostartManager.RequireUnchanged(state, AutostartManager.Inspect(xml, path, sid));
+            staleRejected = false;
+            try
+            {
+                AutostartManager.RequireUnchanged(state, AutostartManager.Inspect(xml, path, sid, SelfTestCopy(sid), @"C:\Third copy\Meter.exe"));
+            }
+            catch (InvalidOperationException)
+            {
+                staleRejected = true;
+            }
+            failures += Check(log, "confirmation cannot authorize overwriting a protected copy another installation now owns", staleRejected);
+            AutostartManager.RequireUnchanged(state, Inspect(xml, path, sid));
             return failures;
+        }
+
+        private static string SelfTestCopy(string sid)
+        {
+            return new ProtectedCopy(ProtectedCopy.DefaultRoot, sid).Executable;
+        }
+
+        // Reads a task as if this user's protected copy was taken from path.
+        private static AutostartState Inspect(string xml, string path, string sid)
+        {
+            return AutostartManager.Inspect(xml, path, sid, SelfTestCopy(sid), path);
         }
 
         private static int SupplyStateCases(StringBuilder log)

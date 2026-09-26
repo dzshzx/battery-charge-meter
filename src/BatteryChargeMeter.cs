@@ -338,7 +338,7 @@ namespace BatteryChargeMeter
             LayoutSourceRows();
             if (trayEnabled)
             {
-                restoreMessage = GuiInstance.ListenForRestore(Handle, Application.ExecutablePath);
+                restoreMessage = GuiInstance.ListenForRestore(Handle, Startup.Identity);
                 restoreWindow = Handle;
             }
         }
@@ -346,7 +346,7 @@ namespace BatteryChargeMeter
         protected override void OnHandleDestroyed(EventArgs e)
         {
             if (restoreWindow != IntPtr.Zero)
-                GuiInstance.StopListening(restoreWindow, Application.ExecutablePath);
+                GuiInstance.StopListening(restoreWindow, Startup.Identity);
             restoreWindow = IntPtr.Zero;
             base.OnHandleDestroyed(e);
         }
@@ -691,6 +691,21 @@ namespace BatteryChargeMeter
 
     internal static class Program
     {
+        // An elevated launch migrates an unprotected task and refreshes this
+        // installation's protected copy. Failures leave the state for the
+        // settings panel to report.
+        private static void SynchronizeAutostart()
+        {
+            try
+            {
+                using (AutostartManager manager = AutostartManager.ForCurrentExecutable(Application.ExecutablePath))
+                    manager.Synchronize(true);
+            }
+            catch (Exception)
+            {
+            }
+        }
+
         [STAThread]
         private static void Main(string[] args)
         {
@@ -711,15 +726,17 @@ namespace BatteryChargeMeter
             {
                 using (GuiInstance instance = new GuiInstance())
                 {
-                    if (!instance.Acquire(Application.ExecutablePath, route.Handoff))
+                    if (!instance.Acquire(Startup.Identity, route.Handoff))
                     {
                         if (!route.StartHidden)
-                            GuiInstance.RestoreExisting(Application.ExecutablePath);
+                            GuiInstance.RestoreExisting(Startup.Identity);
                         return;
                     }
                     ElevationResult elevation = Startup.Route(route, Startup.IsElevated(), Startup.TryElevate);
                     if (elevation.Started)
                         return;
+                    if (Startup.IsElevated())
+                        SynchronizeAutostart();
                     Application.EnableVisualStyles();
                     Application.SetCompatibleTextRenderingDefault(false);
                     Application.Run(new MainForm(true, elevation.Message, route.StartHidden));
@@ -728,10 +745,28 @@ namespace BatteryChargeMeter
             }
             if (route.Command == "--remove-autostart")
             {
+                // 0: removed or absent; 3: task gone, but deleting this
+                // installation's protected copy needs an elevated rerun.
                 try
                 {
                     using (AutostartManager manager = AutostartManager.ForCurrentExecutable(Application.ExecutablePath))
-                        manager.Disable();
+                        Environment.ExitCode = manager.Disable() ? 3 : 0;
+                }
+                catch
+                {
+                    Environment.ExitCode = 1;
+                }
+                return;
+            }
+            if (route.Command == "--sync-autostart")
+            {
+                // Elevated: apply and return 0. Ordinary token: report what an
+                // elevated run would change (3 outdated copy, 4 unprotected
+                // task, 5 unused copy) without requesting UAC.
+                try
+                {
+                    using (AutostartManager manager = AutostartManager.ForCurrentExecutable(Application.ExecutablePath))
+                        Environment.ExitCode = (int)manager.Synchronize(Startup.IsElevated());
                 }
                 catch
                 {

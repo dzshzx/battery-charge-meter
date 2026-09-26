@@ -38,6 +38,7 @@ namespace BatteryChargeMeter
             switch (command)
             {
                 case "--remove-autostart":
+                case "--sync-autostart":
                     route.Valid = args.Length == 1;
                     break;
                 case "--self-test":
@@ -75,6 +76,23 @@ namespace BatteryChargeMeter
 
     internal static class Startup
     {
+        private static string identity;
+
+        // The installation this process represents: its own path, or for the
+        // protected logon copy the installation it was copied from. Single-
+        // instance locks and restore messages use it, so a manual launch
+        // restores the running logon instance.
+        internal static string Identity
+        {
+            get
+            {
+                if (identity == null)
+                    using (WindowsIdentity user = WindowsIdentity.GetCurrent())
+                        identity = ProtectedCopy.IdentityFor(Application.ExecutablePath, user.User.Value);
+                return identity;
+            }
+        }
+
         internal static bool IsElevated()
         {
             using (WindowsIdentity identity = WindowsIdentity.GetCurrent())
