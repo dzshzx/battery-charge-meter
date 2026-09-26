@@ -26,44 +26,28 @@ namespace BatteryChargeMeter
 
         private void RefreshAutostart()
         {
-            bool enabled = false;
-            bool known = true;
-            autostartStateMessage = null;
+            AutostartStatus status;
             try
             {
                 using (AutostartManager manager = AutostartManager.ForCurrentExecutable(Application.ExecutablePath))
-                {
-                    AutostartState state;
-                    try
-                    {
-                        state = manager.Read();
-                    }
-                    catch (ForeignAutostartTaskException)
-                    {
-                        // Not this program's startup: show it as off, leave the
-                        // task alone and say where to delete it.
-                        state = new AutostartState();
-                        autostartStateMessage = ForeignTaskMessage + manager.TaskName;
-                    }
-                    enabled = state.ThisCopy && state.Enabled;
-                    if (state.ThisCopy && !String.IsNullOrEmpty(state.RepairReason))
-                        autostartStateMessage = state.RepairReason;
-                    if (autostartCheckBox != null && !autostartCheckBox.IsDisposed)
-                        sourceTip.SetToolTip(autostartCheckBox, state.Exists && !state.ThisCopy
-                        ? Strings.Format("当前自启指向：{0}；勾选可确认更换。", state.Executable)
-                        : Strings.Get("以当前 Windows 用户登录后，从仅管理员可写的受保护副本以管理员权限运行并留在托盘。移动程序后需重新启用。"));
-                }
+                    status = manager.Describe();
             }
             catch (Exception error)
             {
-                known = false;
-                autostartStateMessage = "自启状态读取失败：" + ErrorMessage(error);
+                status = AutostartPolicy.ReadFailed(ErrorMessage(error));
             }
+            autostartStateMessage = status.Notice;
+            bool known = status.Switch != AutostartSwitch.Unknown;
+            bool enabled = status.Switch == AutostartSwitch.On;
             updatingAutostart = true;
             if (autostartCheckBox != null && !autostartCheckBox.IsDisposed)
+            {
+                if (status.Tooltip != null)
+                    sourceTip.SetToolTip(autostartCheckBox, status.Tooltip);
                 autostartCheckBox.CheckState = known
                     ? (enabled ? CheckState.Checked : CheckState.Unchecked)
                     : CheckState.Indeterminate;
+            }
             autostartMenuItem.Checked = enabled;
             autostartMenuItem.ToolTipText = known ? "" : Strings.Get("状态读取失败，请查看主窗口中的原因。");
             updatingAutostart = false;
@@ -76,10 +60,12 @@ namespace BatteryChargeMeter
             {
                 using (AutostartManager manager = AutostartManager.ForCurrentExecutable(Application.ExecutablePath))
                 {
+                    AutostartRemoval removal = AutostartRemoval.Removed;
                     if (enable)
                     {
+                        // Refuse before asking about replacement.
                         if (!Startup.IsElevated())
-                            throw new InvalidOperationException("请先点击下方“以管理员身份重新启动”，再勾选开机自启。");
+                            throw new InvalidOperationException(AutostartPolicy.ElevationRequired);
                         AutostartState state = manager.Read();
                         bool replace = state.Exists && !state.ThisCopy;
                         if (replace && MessageBox.Show(this,
@@ -88,13 +74,12 @@ namespace BatteryChargeMeter
                             return;
                         manager.Enable(state);
                     }
-                    else if (manager.Disable() == AutostartRemoval.CopyNeedsElevation)
+                    else
                     {
-                        autostartMessage = "已关闭此程序的开机自启；受保护副本将在下次以管理员身份启动时删除。";
-                        return;
+                        removal = manager.Disable();
                     }
+                    autostartMessage = AutostartPolicy.Outcome(enable, removal);
                 }
-                autostartMessage = enable ? "已启用开机自启：登录后以管理员权限运行受保护副本，在托盘显示。" : "已关闭此程序的开机自启。";
             }
             catch (Exception error)
             {
@@ -105,9 +90,6 @@ namespace BatteryChargeMeter
                 RefreshAutostart();
             }
         }
-
-        // Chinese lookup key ending in {0}; the task name follows verbatim.
-        private const string ForeignTaskMessage = "同名自启任务不属于本程序，已保留未改；如不再需要，请在任务计划程序库中手工删除：";
 
         private static string ErrorMessage(Exception error)
         {

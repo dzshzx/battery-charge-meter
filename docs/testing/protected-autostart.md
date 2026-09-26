@@ -31,8 +31,10 @@ file would then start elevated at the next sign-in without a UAC prompt.
 ## Automated coverage
 
 - `--self-test`: task inspection with the protected path, recorded owner,
-  unprotected-task reporting, foreign task shapes, identity mapping, and CLI
-  routing for `--sync-autostart`.
+  unprotected-task reporting, foreign task shapes, identity mapping, CLI
+  routing for `--sync-autostart`, and the full `AutostartPolicy` decision
+  table (synchronize, disable and enable plans, exit codes and their
+  precedence, refusals without elevation, and the in-app switch state).
 - `scripts/test-installer-uninstall.ps1` (inside `scripts/test.ps1`, requires
   an elevated token): real Inno install, upgrade over a legacy task that runs
   the user-writable launcher (migrated to the protected copy), ACL and owner
@@ -77,3 +79,14 @@ the interactive session.
 
 Sign-out and sign-in were not performed; the scheduler's on-demand run uses
 the same principal and action as the logon trigger.
+
+## Policy refactor, 2026-09-27
+
+Decisions moved into the pure `AutostartPolicy`; the manager's interface,
+exit codes and task XML are unchanged. On NERV against candidate `1abb153`,
+`scripts/test-autostart.ps1 -CheckOrdinaryClient` passed all 43 checks from an
+elevated interactive session (started through a one-off interactive
+highest-privilege scheduled task, removed afterwards), including the ordinary
+Explorer-token client and the foreign same-name task. No test task, test
+folder or process remained. The real installer lifecycle is covered by the
+Windows CI run with `-RequireInstaller`.

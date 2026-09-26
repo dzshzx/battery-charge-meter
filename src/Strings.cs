@@ -83,7 +83,6 @@ namespace BatteryChargeMeter
             { "管理员启动未成功，继续普通模式。", "Elevated launch did not start. Continuing in standard mode." },
             { "已取消管理员授权，继续普通模式。", "Administrator access was cancelled. Continuing in standard mode." },
             { "管理员启动失败，继续普通模式：", "Elevated launch failed. Continuing in standard mode: " },
-            { "请先点击“重新以管理员身份启动”，再启用开机自启。", "Restart as administrator before enabling startup." },
             { "自启任务写入后的读取校验失败。", "Startup task verification failed after writing." },
             { "自启任务已被另一份程序修改，请重新读取并确认后再试。", "Another copy changed the startup task. Refresh and confirm before retrying." },
             { "自启任务删除后的读取校验失败。", "Startup task verification failed after deletion." },
