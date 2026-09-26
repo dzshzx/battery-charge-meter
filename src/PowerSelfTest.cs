@@ -225,16 +225,29 @@ namespace BatteryChargeMeter
                 && ProtectedCopy.IdentityFor(@"C:\Missing\" + sid + @"\PowerMeter.exe", sid) == @"C:\Missing\" + sid + @"\PowerMeter.exe");
             failures += Check(log, "disabled task is read as disabled",
                 !Inspect(xml.Replace("<Enabled>true</Enabled>", "<Enabled>false</Enabled>"), path, sid).Enabled);
-            bool foreignRejected = false;
-            try
+            // Each shape this program never registers is reported as a foreign
+            // task (a distinct type, so removal can leave it and still finish).
+            string[] foreign = new string[]
             {
-                Inspect(xml.Replace("BatteryChargeMeter.Logon.v1", "someone-else"), path, sid);
-            }
-            catch (InvalidOperationException)
+                xml.Replace("BatteryChargeMeter.Logon.v1", "someone-else"),
+                xml.Replace("<Arguments>--autostart</Arguments>", "<Arguments>--other</Arguments>"),
+                xml.Replace("</Exec></Actions>", "</Exec><Exec><Command>C:\\Other\\Tool.exe</Command></Exec></Actions>"),
+                xml.Replace("<Principal id=\"User\"><UserId>" + sid, "<Principal id=\"User\"><UserId>S-1-5-21-111-222-333-1002")
+            };
+            foreach (string changed in foreign)
             {
-                foreignRejected = true;
+                bool foreignRejected = false;
+                try
+                {
+                    Inspect(changed, path, sid);
+                }
+                catch (ForeignAutostartTaskException)
+                {
+                    foreignRejected = true;
+                }
+                failures += Check(log, "foreign task shape is reported as not this program's and never adopted",
+                    foreignRejected && changed != xml);
             }
-            failures += Check(log, "foreign task ownership marker prevents mutation", foreignRejected);
             using (System.Security.Principal.WindowsIdentity identity = System.Security.Principal.WindowsIdentity.GetCurrent())
             {
                 string currentSid = identity.User.Value;

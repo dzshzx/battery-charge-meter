@@ -36,6 +36,29 @@ namespace BatteryChargeMeter
         OrphanCopy = 5
     }
 
+    // Exit codes of --remove-autostart (1 is a failure, 2 invalid arguments).
+    internal enum AutostartRemoval
+    {
+        Removed = 0,
+        // This installation's task is gone, but deleting its protected copy
+        // needs an elevated rerun.
+        CopyNeedsElevation = 3,
+        // This installation's startup is removed; a same-name task that fails
+        // the ownership check was left unchanged for the user to delete.
+        ForeignTaskKept = 6
+    }
+
+    // A task with this program's name whose structure is not one this program
+    // registers (edited by the user or another program). It is never
+    // modified; removal treats it as not this program's startup.
+    internal sealed class ForeignAutostartTaskException : InvalidOperationException
+    {
+        internal ForeignAutostartTaskException()
+            : base("同名任务不属于本程序，未修改。")
+        {
+        }
+    }
+
     // Use the Windows-provided Task Scheduler COM API. No service, password,
     // external executable, or third-party scheduler library is needed.
     internal sealed class AutostartManager : IDisposable
@@ -80,6 +103,9 @@ namespace BatteryChargeMeter
         }
 
         internal string Identity { get { return identity; } }
+
+        // Name in the Task Scheduler Library root, for manual deletion hints.
+        internal string TaskName { get { return taskName; } }
 
         internal AutostartState Read()
         {
@@ -173,30 +199,53 @@ namespace BatteryChargeMeter
         }
 
         // Deletes this installation's task and, when elevated, its protected
-        // copy. Returns true when a copy owned by this installation remains
-        // because deleting it requires an elevated process.
-        internal bool Disable()
+        // copy. A same-name task that fails the ownership check is left
+        // unchanged and reported, so uninstall and the in-app switch always
+        // have a way out; CopyNeedsElevation takes precedence because the
+        // elevated rerun reports the foreign task again.
+        internal AutostartRemoval Disable()
         {
-            bool remains = false;
-            Mutate(delegate { remains = DisableCore(); });
-            return remains;
+            AutostartRemoval result = AutostartRemoval.Removed;
+            Mutate(delegate { result = DisableCore(); });
+            return result;
         }
 
-        private bool DisableCore()
+        private AutostartRemoval DisableCore()
         {
-            AutostartState before = Read();
+            bool foreign;
+            AutostartState before = ReadOwn(out foreign);
             if (before.Exists && before.ThisCopy)
             {
                 Call(folder, "DeleteTask", taskName, 0);
                 if (Read().ThisCopy)
                     throw new InvalidOperationException("自启任务删除后的读取校验失败。");
             }
+            AutostartRemoval done = foreign ? AutostartRemoval.ForeignTaskKept : AutostartRemoval.Removed;
             if (!copy.OwnedBy(identity))
-                return false;
+                return done;
             if (!Startup.IsElevated())
-                return true;
+                return AutostartRemoval.CopyNeedsElevation;
             copy.Remove();
-            return false;
+            return done;
+        }
+
+        // Like Read, but a same-name task that fails the ownership check reads
+        // as absent: it is not this program's startup, never runs this
+        // installation's copy as far as cleanup is concerned, and is never
+        // touched. The copy lives below Program Files, so removing it cannot
+        // let an ordinary process plant a file where such a task points.
+        private AutostartState ReadOwn(out bool foreign)
+        {
+            foreign = false;
+            try
+            {
+                return Read();
+            }
+            catch (ForeignAutostartTaskException)
+            {
+                foreign = true;
+                return new AutostartState();
+            }
         }
 
         // Brings the protected copy in line with this installation: migrates a
@@ -215,7 +264,10 @@ namespace BatteryChargeMeter
         {
             if (!ProtectedCopy.SamePath(image, identity))
                 return AutostartSync.Current;
-            AutostartState state = Read();
+            // A foreign same-name task reads as absent, so a copy this
+            // installation still owns counts as unused (OrphanCopy).
+            bool foreign;
+            AutostartState state = ReadOwn(out foreign);
             AutostartSync needed;
             if (state.Exists && state.ThisCopy && !state.Protected)
                 needed = AutostartSync.Unprotected;
@@ -282,7 +334,7 @@ namespace BatteryChargeMeter
                 || !MatchesUser(Text(document, ns, "/t:Task/t:Principals/t:Principal/t:UserId"), userSid)
                 || document.SelectNodes("/t:Task/t:Actions/*", ns).Count != 1
                 || Text(document, ns, "/t:Task/t:Actions/t:Exec/t:Arguments") != "--autostart")
-                throw new InvalidOperationException("同名任务不属于本程序，未修改。");
+                throw new ForeignAutostartTaskException();
             string target = Text(document, ns, "/t:Task/t:Actions/t:Exec/t:Command");
             bool enabled = Text(document, ns, "/t:Task/t:Settings/t:Enabled") != "false";
             bool correctPolicy = Text(document, ns, "/t:Task/t:Principals/t:Principal/t:RunLevel") == "HighestAvailable"

@@ -89,6 +89,7 @@ namespace BatteryChargeMeter
             { "自启任务删除后的读取校验失败。", "Startup task verification failed after deletion." },
             { "另一份程序正在修改自启，请稍后重试。", "Another copy is changing startup settings. Try again shortly." },
             { "同名任务不属于本程序，未修改。", "A task with this name belongs to another application. It was left unchanged." },
+            { "同名自启任务不属于本程序，已保留未改；如不再需要，请在任务计划程序库中手工删除：{0}", "A startup task with this name belongs to another application and was left unchanged. If it is no longer needed, delete it manually in the Task Scheduler Library: {0}" },
             { "自启任务设置已变化（权限、触发条件或运行限制），请重新勾选以修复。", "Startup permissions, triggers or limits changed. Enable startup again to repair the task." },
             { "无法初始化窗口恢复通知。", "Unable to initialize the window restore notification." },
             { "电池状态不可用", "Battery status unavailable" },

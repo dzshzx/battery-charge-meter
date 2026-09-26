@@ -746,11 +746,13 @@ namespace BatteryChargeMeter
             if (route.Command == "--remove-autostart")
             {
                 // 0: removed or absent; 3: task gone, but deleting this
-                // installation's protected copy needs an elevated rerun.
+                // installation's protected copy needs an elevated rerun;
+                // 6: removed, but a same-name task that is not this program's
+                // was left unchanged (see AutostartRemoval).
                 try
                 {
                     using (AutostartManager manager = AutostartManager.ForCurrentExecutable(Application.ExecutablePath))
-                        Environment.ExitCode = manager.Disable() ? 3 : 0;
+                        Environment.ExitCode = (int)manager.Disable();
                 }
                 catch
                 {
