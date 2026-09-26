@@ -244,6 +244,29 @@ try {
     Invoke-Internal $managerB 'Disable' | Out-Null
     Assert-True (-not (Invoke-Internal $managerB 'Read').Exists -and -not (Test-Path -LiteralPath $protectedExe)) 'own task and protected copy deletion reads back absent'
 
+    # A same-name task in a shape this program never registers is left alone:
+    # reading reports it, enabling refuses, and disabling still removes this
+    # installation's protected copy and reports the kept task (exit code 6).
+    Enable-Current $managerA
+    $foreignXml = $folder.GetTask($taskName).Xml.Replace('<Arguments>--autostart</Arguments>', '<Arguments>--not-power-meter</Arguments>').Replace('HighestAvailable', 'LeastPrivilege').Replace('<Enabled>true</Enabled>', '<Enabled>false</Enabled>')
+    $folder.RegisterTask($taskName, $foreignXml, 6, $sid, $null, 3, $null) | Out-Null
+    $foreignXml = $folder.GetTask($taskName).Xml
+    $foreignType = $null
+    try { Invoke-Internal $managerA 'Read' | Out-Null } catch {
+        $cause = $_.Exception
+        while ($cause.InnerException) { $cause = $cause.InnerException }
+        $foreignType = $cause.GetType().Name
+    }
+    Assert-True ($foreignType -eq 'ForeignAutostartTaskException') 'foreign same-name task is reported as not this program''s'
+    $enableRejected = $false
+    try { Invoke-Internal $managerA 'Enable' @($absent) } catch { $enableRejected = $true }
+    Assert-True ($enableRejected -and $folder.GetTask($taskName).Xml -eq $foreignXml) 'enabling never overwrites a foreign same-name task'
+    Assert-True ([int](Invoke-Internal $managerA 'Synchronize' @($false)) -eq 5) 'report-only synchronization treats the owned copy as unused beside a foreign task'
+    Assert-True ([int](Invoke-Internal $managerA 'Disable') -eq 6) 'disable reports the kept foreign task with exit code 6'
+    Assert-True ($folder.GetTask($taskName).Xml -eq $foreignXml -and -not (Test-Path -LiteralPath $protectedExe)) 'disable leaves the foreign task unchanged and removes the protected copy'
+    Assert-True ([int](Invoke-Internal $managerA 'Disable') -eq 6) 'repeated disable stays finishable'
+    $folder.DeleteTask($taskName, 0)
+
     Enable-Current $managerA
     $task = $folder.GetTask($taskName)
     $changedXml = $task.Xml.Replace('<DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>', '<DisallowStartIfOnBatteries>true</DisallowStartIfOnBatteries>')

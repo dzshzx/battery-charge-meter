@@ -33,7 +33,18 @@ namespace BatteryChargeMeter
             {
                 using (AutostartManager manager = AutostartManager.ForCurrentExecutable(Application.ExecutablePath))
                 {
-                    AutostartState state = manager.Read();
+                    AutostartState state;
+                    try
+                    {
+                        state = manager.Read();
+                    }
+                    catch (ForeignAutostartTaskException)
+                    {
+                        // Not this program's startup: show it as off, leave the
+                        // task alone and say where to delete it.
+                        state = new AutostartState();
+                        autostartStateMessage = ForeignTaskMessage + manager.TaskName;
+                    }
                     enabled = state.ThisCopy && state.Enabled;
                     if (state.ThisCopy && !String.IsNullOrEmpty(state.RepairReason))
                         autostartStateMessage = state.RepairReason;
@@ -78,7 +89,7 @@ namespace BatteryChargeMeter
                             return;
                         manager.Enable(state);
                     }
-                    else if (manager.Disable())
+                    else if (manager.Disable() == AutostartRemoval.CopyNeedsElevation)
                     {
                         autostartMessage = "已关闭此程序的开机自启；受保护副本将在下次以管理员身份启动时删除。";
                         return;
@@ -95,6 +106,9 @@ namespace BatteryChargeMeter
                 RefreshAutostart();
             }
         }
+
+        // Chinese lookup key ending in {0}; the task name follows verbatim.
+        private const string ForeignTaskMessage = "同名自启任务不属于本程序，已保留未改；如不再需要，请在任务计划程序库中手工删除：";
 
         private static string ErrorMessage(Exception error)
         {

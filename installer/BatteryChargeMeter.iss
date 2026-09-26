@@ -65,6 +65,8 @@ en.StartupDisarmFailed=Logon startup runs a file that standard processes can rep
 zhCN.StartupDisarmFailed=开机自启运行的是普通权限可替换的文件，且未能关闭。请以管理员身份打开功率计，重新启用或关闭开机自启。
 en.StartupCopyRemains=The logon task was removed, but its protected copy under Program Files\Power Meter\autostart needs administrator access to delete. It no longer starts automatically.
 zhCN.StartupCopyRemains=自启任务已删除，但 Program Files\Power Meter\autostart 下的受保护副本需要管理员权限才能删除。它不会再自动运行。
+en.StartupForeignTaskKept=A task in the Task Scheduler Library root named BatteryChargeMeter.Logon. followed by your user SID does not belong to Power Meter, so it was left unchanged and uninstall continues. If you no longer need it, delete it manually in Task Scheduler (taskschd.msc).
+zhCN.StartupForeignTaskKept=任务计划程序库根目录中名为 BatteryChargeMeter.Logon. 加你的用户 SID 的任务不属于功率计，已保留未改，卸载继续进行。如不再需要，请在“任务计划程序”（taskschd.msc）中手工删除。
 
 [Files]
 Source: "{#SourceExe}"; DestDir: "{app}"; DestName: "PowerMeter.exe"; Flags: ignoreversion
@@ -86,6 +88,7 @@ const
   StartupStaleCopy = 3;
   StartupUnprotected = 4;
   StartupCopyNeedsElevation = 3;
+  StartupForeignTaskKept = 6;
 
 function HasLegacyExecutable(): Boolean;
 begin
@@ -143,14 +146,23 @@ begin
   begin
     if not Exec(ExePath, '--remove-autostart', ExpandConstant('{app}'),
       SW_HIDE, ewWaitUntilTerminated, ExitCode) then
-      RaiseException(CustomMessage('CleanupLaunchFailed'))
-    else if ExitCode = StartupCopyNeedsElevation then
+      RaiseException(CustomMessage('CleanupLaunchFailed'));
+    if ExitCode = StartupCopyNeedsElevation then
     begin
-      { The task is already gone; only its inert protected copy remains. }
-      if not RunElevated(ExePath, '--remove-autostart') then
+      { The task is already gone (or is not ours); only this installation's
+        inert protected copy remains. The elevated rerun reports a foreign
+        same-name task again. }
+      if not ShellExec('runas', ExePath, '--remove-autostart', ExpandConstant('{app}'),
+        SW_HIDE, ewWaitUntilTerminated, ExitCode) then
+        ExitCode := StartupCopyNeedsElevation;
+      if (ExitCode <> 0) and (ExitCode <> StartupForeignTaskKept) then
         SuppressibleMsgBox(CustomMessage('StartupCopyRemains'), mbInformation, MB_OK, IDOK);
     end
-    else if ExitCode <> 0 then
+    else if (ExitCode <> 0) and (ExitCode <> StartupForeignTaskKept) then
       RaiseException(CustomMessage('CleanupFailed'));
+    { A same-name task that is not this program's is never modified; it must
+      not block uninstall either. }
+    if ExitCode = StartupForeignTaskKept then
+      SuppressibleMsgBox(CustomMessage('StartupForeignTaskKept'), mbInformation, MB_OK, IDOK);
   end;
 end;

@@ -22,26 +22,35 @@ file would then start elevated at the next sign-in without a UAC prompt.
   definition and the copy's recorded owner.
 - The task ACL is unchanged: the ordinary token may read, run and delete it,
   but not rewrite its action.
+- A same-name task in a shape this program never registers (edited by the
+  user or another program) is never modified or adopted. Removal treats it as
+  absent: this installation's copy is still removed, `--remove-autostart`
+  returns 6 instead of failing, uninstall completes with a manual-deletion
+  notice, and the in-app switch reads as off with the same hint.
 
 ## Automated coverage
 
 - `--self-test`: task inspection with the protected path, recorded owner,
-  unprotected-task reporting, identity mapping, and CLI routing for
-  `--sync-autostart`.
+  unprotected-task reporting, foreign task shapes, identity mapping, and CLI
+  routing for `--sync-autostart`.
 - `scripts/test-installer-uninstall.ps1` (inside `scripts/test.ps1`, requires
   an elevated token): real Inno install, upgrade over a legacy task that runs
   the user-writable launcher (migrated to the protected copy), ACL and owner
   checks on every protected level, replacement of the installed executable,
   upgrade refresh to a different executable with an unchanged task, and
   uninstall cancel / cleanup failure / success, which removes task, copy and
-  the empty folders. It uses a unique `Program Files\Power Meter InstallerTest
+  the empty folders, then a reinstall whose same-name task is replaced by a
+  foreign shape: uninstall completes, the task is unchanged and the copy is
+  removed. It uses a unique `Program Files\Power Meter InstallerTest
   <id>` root and task name.
 - `scripts/test-autostart.ps1 -CheckOrdinaryClient` (manual, elevated
   interactive session): migration and report-only exit codes, replacement of
   the user copy through the real Explorer token, write/rename/delete/ACL
   attempts on the protected copy from that token, an elevated scheduler run
   of the original copy afterwards, restore of the protected instance by a
-  manual launch of its source, and removal of an unused copy.
+  manual launch of its source, removal of an unused copy, and a foreign
+  same-name task (read reports it, enable refuses, disable returns 6 and still
+  removes the copy).
 
 The UAC prompt raised by an unelevated setup or uninstaller cannot be answered
 by automation, so that branch (and its declined fallback) is covered only by

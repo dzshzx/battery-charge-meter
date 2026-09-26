@@ -216,7 +216,7 @@ class InstallerCleanupFixture {
             bool elevated = new WindowsPrincipal(user).IsInRole(WindowsBuiltInRole.Administrator);
             manager = type.GetConstructor(flags, null, new Type[] {typeof(string), typeof(string), typeof(string), typeof(string)}, null)
                 .Invoke(new object[] {Process.GetCurrentProcess().MainModule.FileName, user.User.Value, "__TASK__", @"__ROOT__"});
-            if (remove) return (bool)type.GetMethod("Disable", flags).Invoke(manager, null) ? 3 : 0;
+            if (remove) return Convert.ToInt32(type.GetMethod("Disable", flags).Invoke(manager, null));
             return Convert.ToInt32(type.GetMethod("Synchronize", flags).Invoke(manager, new object[] {elevated}));
         } catch { return 1; }
         finally { if (manager != null) ((IDisposable)manager).Dispose(); }
@@ -318,7 +318,34 @@ class InstallerCleanupFixture {
     Assert-Installer (-not (Test-Path -LiteralPath $protectedParent)) 'affirmative uninstall removes the protected copy and its now-empty folders'
     Assert-Installer (-not (Test-Path -LiteralPath $installedExe) -and -not (Test-Path -LiteralPath $uninstaller)) 'affirmative uninstall removes application and uninstaller'
     $installed = $false
-    Write-Host 'Real Inno migration/refresh and cancel/failure/accept lifecycle passed.'
+
+    # A same-name task that fails the ownership check (edited by the user or
+    # another program) must neither be modified nor block uninstall. Enable
+    # startup for a fresh install through the shipping manager, then change
+    # the task's action arguments; it is registered disabled and
+    # least-privilege so it can never run.
+    $reinstall = Start-Process (Join-Path $root 'fixture-setup.exe') -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/LANG=en', ('/DIR="{0}"' -f $installDir)) -Wait -PassThru
+    Assert-Installer ($reinstall.ExitCode -eq 0) 'reinstall for the foreign-task case completes'
+    $installed = $true
+    $flags = [Reflection.BindingFlags]'Instance,NonPublic'
+    $manager = $type.GetConstructor($flags, $null, [type[]]@([string], [string], [string], [string]), $null).Invoke([object[]]@([string]$installedExe, [string]$sid, [string]$taskName, [string]$protectedRoot))
+    try {
+        $expected = $type.GetMethod('Read', $flags).Invoke($manager, $null)
+        $type.GetMethod('Enable', $flags).Invoke($manager, [object[]]@($expected))
+    } finally { $manager.Dispose() }
+    Assert-Installer ((Get-TaskCommand) -eq $protectedExe -and (Test-Path -LiteralPath $protectedExe)) 'reinstalled copy enables startup with its protected copy'
+    $foreignXml = (Get-TaskXml).Replace('<Arguments>--autostart</Arguments>', '<Arguments>--not-power-meter</Arguments>').Replace('HighestAvailable', 'LeastPrivilege').Replace('<Enabled>true</Enabled>', '<Enabled>false</Enabled>')
+    $folder.RegisterTask($taskName, $foreignXml, 6, $sid, $null, 3, $null) | Out-Null
+    $foreignXml = Get-TaskXml
+    Assert-Installer ($foreignXml -match '--not-power-meter') 'same-name task now has a shape this program never registers'
+    Remove-Item -LiteralPath $receipt -ErrorAction SilentlyContinue
+    $foreignCode = Start-Uninstall 6 'foreign.log'
+    Assert-Installer ($foreignCode -eq 0 -and (Test-Path -LiteralPath $receipt)) 'uninstall runs cleanup and completes despite a foreign same-name task'
+    Assert-Installer ((Get-TaskXml) -eq $foreignXml) 'uninstall leaves the foreign same-name task unchanged'
+    Assert-Installer (-not (Test-Path -LiteralPath $protectedParent)) 'uninstall still removes this installation''s protected copy and empty folders'
+    Assert-Installer (-not (Test-Path -LiteralPath $installedExe) -and -not (Test-Path -LiteralPath $uninstaller)) 'uninstall with a foreign task removes application and uninstaller'
+    $installed = $false
+    Write-Host 'Real Inno migration/refresh, cancel/failure/accept and foreign-task lifecycle passed.'
 }
 finally {
     if ($activeUninstaller -and -not $activeUninstaller.HasExited) {
