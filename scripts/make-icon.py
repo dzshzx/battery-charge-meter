@@ -1,7 +1,12 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --script --quiet
+# /// script
+# requires-python = ">=3.10"
+# dependencies = ["cairosvg", "pillow"]
+# ///
 """Render the Lucide battery-medium artwork with CairoSVG and Pillow.
 
-Run: uv run --with cairosvg --with pillow python scripts/make-icon.py
+Run: uv run --script scripts/make-icon.py (dependencies are declared inline
+and pinned in scripts/make-icon.py.lock)
 The SVG is the editable source; all Windows icon sizes are packed by Pillow.
 """
 import io
