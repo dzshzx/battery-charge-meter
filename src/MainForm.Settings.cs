@@ -152,8 +152,7 @@ namespace BatteryChargeMeter
                     else
                     {
                         elevationMessage = result.Message;
-                        if (latest != null) UpdatePowerSources(latest);
-                        else errorLabel.Text = Strings.Diagnostic(elevationMessage);
+                        RefreshDiagnostics();
                         retry.Enabled = true;
                     }
                 };

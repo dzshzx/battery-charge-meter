@@ -196,6 +196,8 @@ try {
     Set-Field $form 'autostartMessage' $null
     Set-Field $form 'autostartStateMessage' $null
     $modeType = $assembly.GetType('BatteryChargeMeter.DisplayMode')
+    $snapshotType = $assembly.GetType('BatteryChargeMeter.PowerSnapshot')
+    $sessionType = $assembly.GetType('BatteryChargeMeter.MeterSession')
     $stringsType = $assembly.GetType('BatteryChargeMeter.Strings')
     foreach ($language in @('zh-CN', 'en', 'zh-CN')) {
     $stringsType.GetMethod('Select', [Reflection.BindingFlags]'Static,NonPublic').Invoke($null, @($language, $false))
@@ -223,35 +225,27 @@ try {
             $battery.VoltageVolts = 17.51
             $battery.CurrentAmps = $battery.PowerWatts / 17.51
             $battery.Percentage = 98
-            $snapshot = New-Internal 'PowerSnapshot'
-            $snapshot.Battery = $battery
-            $snapshot.Timestamp = [DateTimeOffset]::Parse('2026-09-23T14:38:15+08:00')
-            $snapshot.BatteryTerminal = New-Sample 'BatteryTerminal' $battery.PowerWatts
-            $snapshot.CpuPackage = New-Sample 'CpuPackage' 10.1
+            $timestamp = [DateTimeOffset]::Parse('2026-09-23T14:38:15+08:00')
+            $cpuPackage = New-Sample 'CpuPackage' 10.1
             $mode = if ($scenario -eq 'discharging') { 'Battery' } else { 'WholeSystem' }
-            Set-Field $form 'displayMode' ([Enum]::Parse($modeType, $mode))
+            # A fresh session per scenario starts empty statistics without
+            # persisting the display mode.
+            Set-Field $form 'session' ([Activator]::CreateInstance($sessionType, $flags, $null, [object[]]@([Enum]::Parse($modeType, $mode)), $null))
             $segments = Get-Field $form 'modeSegments'
             $segments.GetType().GetProperty('SelectedIndex', $flags).SetValue($segments, [int]($mode -eq 'Battery'), $null)
-            Invoke-Internal (Get-Field $form 'history') 'Clear'
             $lastTick = if ($scenario -eq 'starting') { 0 } elseif ($scenario -eq 'warming') { 3 } else { 60 }
             for ($tick = 0; $tick -le $lastTick; $tick++) {
-                $snapshot.ElapsedSeconds = $tick
-                $platform = 19.39 + [Math]::Sin($tick * 0.43) * 2.4
-                if ($tick -eq 60) { $platform = 19.39 }
-                $snapshot.Platform = New-Sample 'Platform' $platform
-                $snapshot.WholeSystem = New-Sample 'EstimatedSystemInput' ($platform + $battery.PowerWatts)
-                if ($scenario -eq 'discharging') {
-                    $snapshot.WholeSystem = New-Sample 'SystemLoad' 17.5
-                }
+                $platformWatts = 19.39 + [Math]::Sin($tick * 0.43) * 2.4
+                if ($tick -eq 60) { $platformWatts = 19.39 }
+                $platform = New-Sample 'Platform' $platformWatts
                 if ($scenario -eq 'unavailable') {
-                    $snapshot.Platform.Available = $false
-                    $snapshot.WholeSystem.Available = $false
-                    $reason = '需要以管理员身份运行才能读取平台功率'
-                    $snapshot.Platform.UnavailableReason = $reason
-                    $snapshot.WholeSystem.UnavailableReason = $reason
+                    $platform.Available = $false
+                    $platform.UnavailableReason = '需要以管理员身份运行才能读取平台功率'
                 }
-                Set-Field $form 'latest' $snapshot
-                Invoke-Internal $form 'PresentSnapshot' @($snapshot, $true)
+                # The whole-system figure is derived by production rules, not by the fixture.
+                $snapshot = $snapshotType.GetMethod('Compose', [Reflection.BindingFlags]'Static,NonPublic').Invoke($null,
+                    [object[]]@($timestamp, [double]$tick, $battery.PSObject.BaseObject, $cpuPackage.PSObject.BaseObject, $platform.PSObject.BaseObject))
+                Invoke-Internal $form 'ShowReading' @($snapshot)
             }
             [Windows.Forms.Application]::DoEvents()
             $scale = $dpi / 96.0

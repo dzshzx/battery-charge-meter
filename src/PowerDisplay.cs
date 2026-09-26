@@ -131,12 +131,4 @@ namespace BatteryChargeMeter
             return peak;
         }
     }
-
-    internal static class PowerDisplay
-    {
-        internal static PowerSample Select(PowerSnapshot snapshot, DisplayMode mode)
-        {
-            return mode == DisplayMode.Battery ? snapshot.BatteryTerminal : snapshot.WholeSystem;
-        }
-    }
 }
