@@ -46,7 +46,10 @@ file would then start elevated at the next sign-in without a UAC prompt.
   removed. It uses a unique `Program Files\Power Meter InstallerTest
   <id>` root and task name.
 - `scripts/test-autostart.ps1 -CheckOrdinaryClient` (manual, elevated
-  interactive session): migration and report-only exit codes, replacement of
+  interactive session; from an elevated but non-interactive SSH session, run
+  it through a one-off scheduled task whose principal is the signed-in user's
+  SID with `-LogonType Interactive -RunLevel Highest`, since the account name
+  does not map there, and unregister the task afterwards): migration and report-only exit codes, replacement of
   the user copy through the real Explorer token, write/rename/delete/ACL
   attempts on the protected copy from that token, an elevated scheduler run
   of the original copy afterwards, restore of the protected instance by a
