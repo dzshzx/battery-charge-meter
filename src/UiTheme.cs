@@ -70,23 +70,18 @@ namespace BatteryChargeMeter
             }
         }
 
-        internal static string SupplyCaption(BatterySupplyState state)
+        internal static Color Tone(ReadoutTone tone, BatteryAccentKind accent)
         {
-            return Strings.Get(SupplyCaptionKey(state));
-        }
-
-        private static string SupplyCaptionKey(BatterySupplyState state)
-        {
-            switch (state)
+            switch (tone)
             {
-                case BatterySupplyState.ExternalPowerIdle: return "已接电源 · 未充电";
-                case BatterySupplyState.ExternalPowerCharging: return "已接电源 · 充电中";
-                case BatterySupplyState.ExternalPowerSupplemented: return "已接电源 · 电池补充";
-                case BatterySupplyState.ExternalPowerDirectionUnknown: return "已接电源 · 状态未知";
-                case BatterySupplyState.BatteryDischarging: return "电池供电 · 放电中";
-                case BatterySupplyState.BatteryDirectionUnknown: return "电池供电 · 速率未知";
-                case BatterySupplyState.Inconsistent: return "电池状态异常";
-                default: return "电池不可用";
+                case ReadoutTone.Muted:
+                    return Muted;
+                case ReadoutTone.NumericMuted:
+                    return NumericMuted;
+                case ReadoutTone.Accent:
+                    return Accent(accent);
+                default:
+                    return Ink;
             }
         }
     }

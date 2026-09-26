@@ -32,7 +32,8 @@ namespace BatteryChargeMeter
             failures += ValidationCases(log);
             failures += EmiMetadataCases(log);
             failures += LayoutCases(log);
-            failures += PresentationCases(log);
+            failures += SessionCases(log);
+            failures += WindowCases(log);
             failures += DisplayCases(log);
             failures += HistoryCases(log);
             failures += StartupCases(log);
@@ -54,20 +55,36 @@ namespace BatteryChargeMeter
             PowerSample platform = PowerSample.FromValue(PowerBoundary.Platform, MeasurementKind.Measured, 24, "test", TimeSpan.FromSeconds(1));
             foreach (BatteryReading battery in new BatteryReading[] { Battery(true, true, true, 13), Battery(true, false, true, -5), Battery(false, false, true, -26) })
             {
-                PowerSnapshot snapshot = new PowerSnapshot { Battery = battery, BatteryTerminal = PowerSources.BatterySample(battery), WholeSystem = PowerSources.DeriveWholeSystem(platform, battery) };
+                PowerSnapshot snapshot = Snapshot(battery, platform, 0);
+                MeterView whole = new MeterSession(DisplayMode.WholeSystem).Observe(snapshot);
+                MeterView terminal = new MeterSession(DisplayMode.Battery).Observe(snapshot);
                 failures += Check(log, "selected boundary is shared without substitution: " + battery.SupplyState,
-                    Object.ReferenceEquals(PowerDisplay.Select(snapshot, DisplayMode.WholeSystem), snapshot.WholeSystem)
-                    && Near(PowerDisplay.Select(snapshot, DisplayMode.Battery).Watts, battery.PowerWatts));
+                    whole.Headline.Text == whole.Rows[MeterView.WholeSystemRow].Text
+                    && whole.Title.Text == Strings.Get(PowerSample.LabelFor(snapshot.WholeSystem.Boundary))
+                    && terminal.Headline.Text == terminal.Rows[MeterView.BatteryRow].Text
+                    && terminal.Title.Text == Strings.Get(PowerSample.LabelFor(PowerBoundary.BatteryTerminal)));
             }
             BatteryReading charging = Battery(true, true, true, 13);
-            PowerSnapshot missing = new PowerSnapshot { BatteryTerminal = PowerSources.BatterySample(charging), WholeSystem = PowerSources.DeriveWholeSystem(PowerSample.Unsupported(PowerBoundary.Platform, "missing"), charging) };
-            failures += Check(log, "whole mode does not fall back to available battery", !PowerDisplay.Select(missing, DisplayMode.WholeSystem).Available && PowerDisplay.Select(missing, DisplayMode.Battery).Available);
+            PowerSnapshot missing = Snapshot(charging, PowerSample.Unsupported(PowerBoundary.Platform, "missing"), 0);
+            failures += Check(log, "whole mode does not fall back to available battery",
+                new MeterSession(DisplayMode.WholeSystem).Observe(missing).Headline.Text == "N/A"
+                && new MeterSession(DisplayMode.Battery).Observe(missing).Headline.Text == "13.00 W");
             failures += Check(log, "preferences default safely for missing malformed or inaccessible storage",
                 DisplayPreference.Load(delegate { return null; }) == DisplayMode.WholeSystem
                 && DisplayPreference.Load(delegate { return "invalid"; }) == DisplayMode.WholeSystem
                 && DisplayPreference.Load(delegate { throw new InvalidOperationException(); }) == DisplayMode.WholeSystem
                 && DisplayPreference.Load(delegate { return "Battery"; }) == DisplayMode.Battery);
             return failures;
+        }
+
+        private static PowerSnapshot Snapshot(BatteryReading battery, PowerSample platform, double elapsedSeconds)
+        {
+            return PowerSnapshot.Compose(DateTimeOffset.Now, elapsedSeconds, battery, null, platform);
+        }
+
+        private static PowerSample Whole(PowerSample platform, BatteryReading battery)
+        {
+            return Snapshot(battery, platform, 0).WholeSystem;
         }
 
         private static PowerSample Value(double watts)
@@ -164,6 +181,15 @@ namespace BatteryChargeMeter
                 Startup.Route(route, false, launch);
             }
             failures += Check(log, "invalid route cannot launch UAC", launches == 1);
+            StartupRoute probe = StartupRoute.Parse(new string[] { "--POWER-PROBE", "out.txt", "12" });
+            StartupRoute defaultProbe = StartupRoute.Parse(new string[] { "--power-probe", "out.txt" });
+            StartupRoute dpi = StartupRoute.Parse(new string[] { "--dpi-preview", "shot.png", "168", "96" });
+            StartupRoute tray = StartupRoute.Parse(new string[] { "--tray-preview", "icon.png", "99+", "Discharging" });
+            failures += Check(log, "CLI routes carry parsed arguments for dispatch",
+                probe.Valid && probe.Command == "--power-probe" && probe.Path == "out.txt" && probe.Seconds == 12
+                && defaultProbe.Seconds == 5
+                && dpi.Path == "shot.png" && dpi.Dpis.Length == 2 && dpi.Dpis[0] == 168 && dpi.Dpis[1] == 96
+                && tray.Path == "icon.png" && tray.TrayGlyph == "99+" && tray.TrayDischarging);
             ElevationResult cancel = Startup.Launch(delegate { throw new System.ComponentModel.Win32Exception(1223); });
             ElevationResult failure = Startup.Launch(delegate { throw new InvalidOperationException("failure"); });
             failures += Check(log, "cancel and launch failure retain ordinary GUI with reason", !cancel.Started && cancel.Message.Contains("取消") && !failure.Started && failure.Message.Contains("failure") && !Startup.Launch(delegate { return false; }).Started);
@@ -438,7 +464,7 @@ namespace BatteryChargeMeter
 
             // On battery the machine draws nothing through the port, so the
             // platform figure must not be presented as input power.
-            PowerSample result = PowerSources.DeriveWholeSystem(platform, Battery(false, false, true, -26.5));
+            PowerSample result = Whole(platform, Battery(false, false, true, -26.5));
             failures += Check(log, "on battery reports measured system load",
                 result.Available
                     && result.Boundary == PowerBoundary.SystemLoad
@@ -449,11 +475,11 @@ namespace BatteryChargeMeter
                 result.Boundary != PowerBoundary.EstimatedSystemInput);
 
             // On battery with an unknown discharge rate there is no figure.
-            result = PowerSources.DeriveWholeSystem(platform, Battery(false, false, false, 0.0));
+            result = Whole(platform, Battery(false, false, false, 0.0));
             failures += Check(log, "on battery without a rate is unsupported", !result.Available);
 
             // On external power while charging, input is platform plus charge.
-            result = PowerSources.DeriveWholeSystem(platform, Battery(true, true, true, 13.27));
+            result = Whole(platform, Battery(true, true, true, 13.27));
             failures += Check(log, "on AC while charging estimates input",
                 result.Available
                     && result.Boundary == PowerBoundary.EstimatedSystemInput
@@ -463,37 +489,37 @@ namespace BatteryChargeMeter
             // On external power with the battery supplementing the adapter, the
             // port supplies less than the platform draws. Clamping the battery
             // term to zero here would overstate input.
-            result = PowerSources.DeriveWholeSystem(platform, Battery(true, false, true, -5.0));
+            result = Whole(platform, Battery(true, false, true, -5.0));
             failures += Check(log, "on AC while battery supplements subtracts",
                 result.Available && Near(result.Watts, 19.0));
 
-            result = PowerSources.DeriveWholeSystem(platform, Battery(true, false, true, -30.0));
+            result = Whole(platform, Battery(true, false, true, -30.0));
             failures += Check(log, "negative estimated input is rejected",
                 !result.Available
                     && result.UnavailableReason == "估算结果为负，数据边界或采样窗口不一致");
 
             // A full battery on external power contributes nothing.
-            result = PowerSources.DeriveWholeSystem(platform, Battery(true, false, true, 0.0));
+            result = Whole(platform, Battery(true, false, true, 0.0));
             failures += Check(log, "on AC with an idle battery equals platform",
                 result.Available && Near(result.Watts, 24.0));
 
             // Without platform power there is no input estimate, and the reason
             // has to survive rather than be replaced by a substituted number.
             PowerSample missing = PowerSample.Unsupported(PowerBoundary.Platform, "驱动未安装");
-            result = PowerSources.DeriveWholeSystem(missing, Battery(true, true, true, 13.27));
+            result = Whole(missing, Battery(true, true, true, 13.27));
             failures += Check(log, "on AC without platform power is unsupported",
                 !result.Available && result.UnavailableReason == "驱动未安装");
 
             // On AC with an unknown rate for the direction in effect.
-            result = PowerSources.DeriveWholeSystem(platform, Battery(true, true, false, 0.0));
+            result = Whole(platform, Battery(true, true, false, 0.0));
             failures += Check(log, "on AC without a battery rate is unsupported", !result.Available);
 
-            result = PowerSources.DeriveWholeSystem(platform, null);
+            result = Whole(platform, null);
             failures += Check(log, "missing battery reading is unsupported", !result.Available);
 
             BatteryReading noBattery = BatterySensor.CombineReadings(
                 new BatteryReading[0]);
-            result = PowerSources.DeriveWholeSystem(platform, noBattery);
+            result = Whole(platform, noBattery);
             failures += Check(log, "no active battery preserves its status reason",
                 !result.Available
                     && result.UnavailableReason == noBattery.StatusUnavailableReason);
@@ -501,10 +527,92 @@ namespace BatteryChargeMeter
             return failures;
         }
 
-        private static int PresentationCases(StringBuilder log)
+        private static int SessionCases(StringBuilder log)
         {
-            // Exercise the actual window/tray consumer of the shared snapshot;
-            // pure selector tests alone cannot catch an old battery-only call site.
+            int failures = 0;
+            PowerSample cpuPackage = PowerSample.FromValue(PowerBoundary.CpuPackage,
+                MeasurementKind.Measured, 14.11, "fixture", TimeSpan.FromSeconds(1));
+            PowerSample platform = PowerSample.FromValue(PowerBoundary.Platform,
+                MeasurementKind.Measured, 27, "fixture", TimeSpan.FromSeconds(1));
+            PowerSample noPlatform = PowerSample.Unsupported(PowerBoundary.Platform, "需要管理员权限");
+            DateTimeOffset time = new DateTimeOffset(2026, 9, 27, 10, 20, 30, TimeSpan.FromHours(8));
+            BatteryReading charging = Battery(true, true, true, 39.08);
+
+            MeterSession session = new MeterSession(DisplayMode.WholeSystem);
+            MeterView view = session.Observe(PowerSnapshot.Compose(time, 1, charging, cpuPackage, platform));
+            failures += Check(log, "charging headline, row and tray show the estimated total, not battery or extra CPU",
+                view.Headline.Text == "≈ 66.08 W" && view.Headline.Tone == ReadoutTone.NumericMuted
+                && view.Rows[MeterView.WholeSystemRow].Text == "≈ 66.08 W"
+                && view.Rows[MeterView.WholeSystemRow].Tone == ReadoutTone.Muted
+                && view.Rows[MeterView.CpuPackageRow].Text == "14.11 W"
+                && view.Rows[MeterView.CpuPackageRow].Tone == ReadoutTone.Ink
+                && view.TrayGlyph == "66" && view.Accent == BatteryAccentKind.Charging
+                && view.TrayTooltip == Strings.Get("估算整机输入功率") + ": ≈ 66.08 W"
+                && view.Supply.Text == Strings.Get("已接电源 · 充电中") && view.Updated == "10:20:30");
+
+            view = session.SetMode(DisplayMode.Battery);
+            failures += Check(log, "battery mode changes headline and tray together and restarts statistics",
+                session.Mode == DisplayMode.Battery && view.Headline.Text == "39.08 W"
+                && view.Headline.Tone == ReadoutTone.Accent && view.TrayGlyph == "39"
+                && view.TrayTooltip == Strings.Get("电池端净功率") + ": 39.08 W"
+                && view.AverageValue == "-- W" && view.AverageCaption == Strings.Format("均值 · {0:0.#}/30s", 0.0));
+            view = session.Observe(PowerSnapshot.Compose(time, 2, charging, cpuPackage, platform));
+            failures += Check(log, "mode change seeds statistics with the current reading",
+                view.AverageValue == "39.08 W" && view.AverageCaption == Strings.Format("均值 · {0:0.#}/30s", 1.0));
+            session.Render();
+            view = session.Render();
+            failures += Check(log, "re-rendering does not record another reading",
+                view.AverageCaption == Strings.Format("均值 · {0:0.#}/30s", 1.0));
+
+            session = new MeterSession(DisplayMode.WholeSystem);
+            view = session.Observe(PowerSnapshot.Compose(time, 1, charging, cpuPackage, noPlatform));
+            failures += Check(log, "missing platform clears the total and tray and explains it once",
+                view.Headline.Text == "N/A" && view.Rows[MeterView.WholeSystemRow].Text == "N/A"
+                && view.TrayGlyph == "--" && view.Diagnostics.Count == 1
+                && view.Diagnostics[0] == Strings.Get("平台功率") + ": " + Strings.Diagnostic("需要管理员权限"));
+
+            BatteryReading unplugged = Battery(false, false, true, -17.5);
+            view = session.Observe(PowerSnapshot.Compose(time, 2, unplugged, cpuPackage, noPlatform));
+            failures += Check(log, "unplugged whole display works without platform or elevation",
+                view.Headline.Text == "17.50 W" && view.TrayGlyph == "18"
+                && view.TrayTooltip == Strings.Get("系统负载功率") + ": 17.50 W"
+                && view.WholeCaption == Strings.Get("系统负载功率") && view.Diagnostics.Count == 1);
+
+            BatteryReading supplemented = Battery(true, false, true, -5);
+            session = new MeterSession(DisplayMode.WholeSystem);
+            PowerSample platform24 = PowerSample.FromValue(PowerBoundary.Platform,
+                MeasurementKind.Measured, 24, "fixture", TimeSpan.FromSeconds(1));
+            session.Observe(PowerSnapshot.Compose(time, 0, supplemented, cpuPackage, platform24));
+            view = session.Observe(PowerSnapshot.Compose(time, 1, supplemented, cpuPackage, platform24));
+            failures += Check(log, "battery supplementation reduces the estimate and statistics stay estimated",
+                view.Headline.Text == "≈ 19.00 W" && view.AverageValue == "≈ 19.00 W" && view.PeakValue == "≈ 19.00 W"
+                && view.Supply.Text == Strings.Get("已接电源 · 电池补充") && view.Accent == BatteryAccentKind.Discharging);
+
+            view = session.Fail("sensor failed");
+            failures += Check(log, "sensor failure clears statistics and never shows a stale figure",
+                view.Headline.Text == "N/A" && view.Accent == BatteryAccentKind.Error
+                && view.Supply.Text == Strings.Get("传感器异常") && view.TrayGlyph == "--"
+                && view.TrayTooltip == Strings.Get("整机功率") + ": N/A"
+                && view.Diagnostics.Count == 1 && view.Diagnostics[0] == "sensor failed"
+                && view.AverageValue == "-- W" && view.PeakValue == "-- W" && view.Updated == "10:20:30"
+                && view.Rows[MeterView.PlatformRow].Text == "N/A" && view.BatteryLevel == -1);
+            view = session.Render();
+            failures += Check(log, "sensor failure survives re-rendering until the next reading",
+                view.Supply.Text == Strings.Get("传感器异常"));
+            view = session.Observe(PowerSnapshot.Compose(time, 10, supplemented, cpuPackage, platform24));
+            failures += Check(log, "readings after a failure start new statistics",
+                view.Headline.Text == "≈ 19.00 W" && view.AverageValue == "-- W");
+
+            view = new MeterSession(DisplayMode.Battery).Render();
+            failures += Check(log, "before the first reading the tray keeps the application icon",
+                view.TrayGlyph == null && view.Headline.Text == "--.-- W" && view.Diagnostics.Count == 0);
+            return failures;
+        }
+
+        private static int WindowCases(StringBuilder log)
+        {
+            // Exercise the actual window/tray binding once; the display rules
+            // themselves are covered at the MeterSession interface.
             int failures = 0;
             const System.Reflection.BindingFlags flags = System.Reflection.BindingFlags.Instance
                 | System.Reflection.BindingFlags.NonPublic;
@@ -512,54 +620,27 @@ namespace BatteryChargeMeter
             using (MainForm form = new MainForm(true))
             {
                 BatteryReading battery = Battery(true, true, true, 39.08);
-                PowerSnapshot snapshot = new PowerSnapshot();
-                snapshot.Battery = battery;
-                snapshot.Timestamp = DateTimeOffset.Now;
-                snapshot.ElapsedSeconds = 1;
-                snapshot.BatteryTerminal = PowerSources.BatterySample(battery);
-                snapshot.Platform = PowerSample.FromValue(PowerBoundary.Platform,
-                    MeasurementKind.Measured, 27, "fixture", TimeSpan.FromSeconds(1));
-                snapshot.CpuPackage = PowerSample.FromValue(PowerBoundary.CpuPackage,
-                    MeasurementKind.Measured, 14.11, "fixture", TimeSpan.FromSeconds(1));
-                snapshot.WholeSystem = PowerSources.DeriveWholeSystem(snapshot.Platform, battery);
-                formType.GetField("latest", flags).SetValue(form, snapshot);
-                formType.GetField("displayMode", flags).SetValue(form, DisplayMode.WholeSystem);
-                System.Reflection.MethodInfo present = formType.GetMethod("PresentSnapshot", flags);
-                present.Invoke(form, new object[] { snapshot, true });
+                PowerSnapshot snapshot = PowerSnapshot.Compose(DateTimeOffset.Now, 1, battery,
+                    PowerSample.FromValue(PowerBoundary.CpuPackage, MeasurementKind.Measured, 14.11, "fixture", TimeSpan.FromSeconds(1)),
+                    PowerSample.FromValue(PowerBoundary.Platform, MeasurementKind.Measured, 27, "fixture", TimeSpan.FromSeconds(1)));
                 Label headline = (Label)formType.GetField("powerLabel", flags).GetValue(form);
-                Label whole = (Label)formType.GetField("wholeSystemValue", flags).GetValue(form);
+                Label[] rows = (Label[])formType.GetField("sourceValues", flags).GetValue(form);
                 NotifyIcon tray = (NotifyIcon)formType.GetField("trayIcon", flags).GetValue(form);
-                failures += Check(log, "charging window and tray display total, not battery or extra CPU",
-                    headline.Text == "≈ 66.08 W" && whole.Text == headline.Text
+
+                formType.GetField("session", flags).SetValue(form, new MeterSession(DisplayMode.WholeSystem));
+                form.ShowReading(snapshot);
+                failures += Check(log, "window and tray bind the whole-system view",
+                    headline.Text == "≈ 66.08 W" && rows[MeterView.WholeSystemRow].Text == headline.Text
+                    && headline.ForeColor == UiTheme.NumericMuted
                     && (string)formType.GetField("lastTrayGlyph", flags).GetValue(form) == "66"
-                    && tray.Text.Contains(Strings.Get("估算整机输入功率")) && tray.Text.Contains("≈ 66.08 W"));
+                    && tray.Text == Strings.Get("估算整机输入功率") + ": ≈ 66.08 W");
 
-                formType.GetField("displayMode", flags).SetValue(form, DisplayMode.Battery);
-                snapshot.ElapsedSeconds = 2;
-                present.Invoke(form, new object[] { snapshot, true });
-                failures += Check(log, "battery mode changes actual headline and tray together",
-                    headline.Text == "39.08 W" && tray.Text.Contains(Strings.Get("电池端净功率"))
-                    && (string)formType.GetField("lastTrayGlyph", flags).GetValue(form) == "39");
-
-                formType.GetField("displayMode", flags).SetValue(form, DisplayMode.WholeSystem);
-                snapshot.Platform = PowerSample.Unsupported(PowerBoundary.Platform, "需要管理员权限");
-                snapshot.WholeSystem = PowerSources.DeriveWholeSystem(snapshot.Platform, battery);
-                snapshot.ElapsedSeconds = 3;
-                present.Invoke(form, new object[] { snapshot, true });
-                TextBox reason = (TextBox)formType.GetField("errorLabel", flags).GetValue(form);
-                failures += Check(log, "missing platform clears actual total and tray and shows reason",
-                    headline.Text == "N/A" && whole.Text == "N/A" && reason.Text.Contains("需要管理员权限")
-                    && (string)formType.GetField("lastTrayGlyph", flags).GetValue(form) == "--");
-
-                battery.SupplyState = BatterySupplyState.BatteryDischarging;
-                battery.PowerWatts = -17.5;
-                snapshot.BatteryTerminal = PowerSources.BatterySample(battery);
-                snapshot.WholeSystem = PowerSources.DeriveWholeSystem(snapshot.Platform, battery);
-                snapshot.ElapsedSeconds = 4;
-                present.Invoke(form, new object[] { snapshot, true });
-                failures += Check(log, "unplugged whole display works without platform or elevation",
-                    headline.Text == "17.50 W" && tray.Text.Contains(Strings.Get("系统负载功率"))
-                    && (string)formType.GetField("lastTrayGlyph", flags).GetValue(form) == "18");
+                formType.GetField("session", flags).SetValue(form, new MeterSession(DisplayMode.Battery));
+                form.ShowReading(snapshot);
+                failures += Check(log, "window and tray bind the battery view",
+                    headline.Text == "39.08 W" && headline.ForeColor == UiTheme.Charging
+                    && (string)formType.GetField("lastTrayGlyph", flags).GetValue(form) == "39"
+                    && tray.Text == Strings.Get("电池端净功率") + ": 39.08 W");
             }
             return failures;
         }

@@ -49,8 +49,7 @@ namespace BatteryChargeMeter
             modeSegments.AccessibleName = Strings.Get("功率显示口径");
             modeSegments.Invalidate();
             RefreshAutostart();
-            UpdateStatistics();
-            if (latest != null) PresentSnapshot(latest, false);
+            ShowView(session.Render());
         }
 
         private static void TranslateControls(Control parent)

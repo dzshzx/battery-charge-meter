@@ -5,15 +5,19 @@ using System.Diagnostics;
 
 namespace BatteryChargeMeter
 {
-    /// <summary>One tick's worth of power figures, each carrying its boundary.</summary>
+    /// <summary>
+    /// One tick's worth of power figures, each carrying its boundary. Built
+    /// only by <see cref="Compose"/>, so the battery terminal and whole-system
+    /// figures are always derived by the same rules, in production and in tests.
+    /// </summary>
     internal sealed class PowerSnapshot
     {
-        public DateTimeOffset Timestamp;
-        public double ElapsedSeconds;
-        public BatteryReading Battery;
-        public PowerSample BatteryTerminal;
-        public PowerSample CpuPackage;
-        public PowerSample Platform;
+        public DateTimeOffset Timestamp { get; private set; }
+        public double ElapsedSeconds { get; private set; }
+        public BatteryReading Battery { get; private set; }
+        public PowerSample BatteryTerminal { get; private set; }
+        public PowerSample CpuPackage { get; private set; }
+        public PowerSample Platform { get; private set; }
 
         /// <summary>
         /// The whole-machine figure. Its boundary depends on the supply state:
@@ -21,12 +25,123 @@ namespace BatteryChargeMeter
         /// when running on external power. Read
         /// <see cref="PowerSample.Boundary"/> rather than assuming either.
         /// </summary>
-        public PowerSample WholeSystem;
+        public PowerSample WholeSystem { get; private set; }
+
+        private PowerSnapshot()
+        {
+        }
+
+        /// <summary>
+        /// The platform sample must already be cross-validated (or unsupported);
+        /// validation needs the MSR package reading and belongs to capture.
+        /// </summary>
+        internal static PowerSnapshot Compose(DateTimeOffset timestamp, double elapsedSeconds,
+            BatteryReading battery, PowerSample cpuPackage, PowerSample platform)
+        {
+            PowerSnapshot snapshot = new PowerSnapshot();
+            snapshot.Timestamp = timestamp;
+            snapshot.ElapsedSeconds = elapsedSeconds;
+            snapshot.Battery = battery;
+            snapshot.BatteryTerminal = BatterySample(battery);
+            snapshot.CpuPackage = cpuPackage;
+            snapshot.Platform = platform;
+            snapshot.WholeSystem = DeriveWholeSystem(platform, battery);
+            return snapshot;
+        }
+
+        private static PowerSample BatterySample(BatteryReading battery)
+        {
+            if (battery == null || !battery.StatusAvailable || !battery.RateAvailable)
+                return PowerSample.Unsupported(PowerBoundary.BatteryTerminal, battery == null ? "电池状态不可用"
+                    : (!battery.StatusAvailable ? battery.StatusUnavailableReason : battery.RateUnavailableReason));
+            return PowerSample.FromValue(PowerBoundary.BatteryTerminal, MeasurementKind.Measured,
+                battery.PowerWatts, "WMI BatteryStatus；固件采样窗口与内部时间戳未知", TimeSpan.Zero);
+        }
+
+        /// <summary>
+        /// Answers the whole-machine power question, which is a different
+        /// question in each supply state and therefore a different boundary.
+        ///
+        /// Running on battery, every watt the machine uses leaves the battery
+        /// terminals, so total consumption is measured outright and no estimate
+        /// is involved. Input power in that state is zero by definition and
+        /// reporting the platform figure as input would be plainly wrong.
+        ///
+        /// Running on external power, input is estimated as platform power plus
+        /// the signed battery power. The sign matters: an adapter at its limit
+        /// lets the battery supplement the load, and clamping that term to zero
+        /// would overstate what the port actually supplies. The sum still omits
+        /// charging-path and conversion losses, so it reads low and stays an
+        /// estimate.
+        /// </summary>
+        private static PowerSample DeriveWholeSystem(PowerSample platform, BatteryReading battery)
+        {
+            if (battery == null)
+                return PowerSample.Unsupported(PowerBoundary.SystemLoad, "电池状态不可用");
+
+            if (!battery.StatusAvailable)
+            {
+                return PowerSample.Unsupported(
+                    PowerBoundary.SystemLoad,
+                    String.IsNullOrEmpty(battery.StatusUnavailableReason)
+                        ? "电池状态不可用"
+                        : battery.StatusUnavailableReason);
+            }
+
+            if (!battery.PowerOnline)
+            {
+                if (!battery.RateAvailable)
+                {
+                    return PowerSample.Unsupported(
+                        PowerBoundary.SystemLoad, "电池放电速率不可用");
+                }
+
+                return PowerSample.FromValue(
+                    PowerBoundary.SystemLoad,
+                    MeasurementKind.Measured,
+                    -battery.PowerWatts,
+                    "电池端放电功率",
+                    TimeSpan.Zero);
+            }
+
+            if (platform == null || !platform.Available)
+            {
+                return PowerSample.Unsupported(
+                    PowerBoundary.EstimatedSystemInput,
+                    platform == null ? "平台功率不可用" : platform.UnavailableReason);
+            }
+
+            if (!battery.RateAvailable)
+            {
+                return PowerSample.Unsupported(
+                    PowerBoundary.EstimatedSystemInput, "电池速率不可用");
+            }
+
+            double estimatedWatts = platform.Watts + battery.PowerWatts;
+            if (Double.IsNaN(estimatedWatts) || Double.IsInfinity(estimatedWatts))
+            {
+                return PowerSample.Unsupported(
+                    PowerBoundary.EstimatedSystemInput, "估算结果不是有限数值");
+            }
+            if (estimatedWatts < 0.0)
+            {
+                return PowerSample.Unsupported(
+                    PowerBoundary.EstimatedSystemInput,
+                    "估算结果为负，数据边界或采样窗口不一致");
+            }
+
+            return PowerSample.FromValue(
+                PowerBoundary.EstimatedSystemInput,
+                MeasurementKind.Estimated,
+                estimatedWatts,
+                "平台功率 + 电池端净功率",
+                platform.Window);
+        }
     }
 
     /// <summary>
-    /// Owns the optional power sources and derives the estimated system input
-    /// figure from them.
+    /// Owns the optional power sources and captures one
+    /// <see cref="PowerSnapshot"/> per tick.
     ///
     /// The battery terminal figure is not handled here; it comes from
     /// <see cref="BatterySensor"/> and carries its own availability state.
@@ -93,32 +208,18 @@ namespace BatteryChargeMeter
 
         public PowerSnapshot Read(BatteryReading battery)
         {
-            PowerSnapshot snapshot = new PowerSnapshot();
-            snapshot.Timestamp = DateTimeOffset.Now;
-            snapshot.ElapsedSeconds = clock.Elapsed.TotalSeconds;
-            snapshot.Battery = battery;
-            snapshot.BatteryTerminal = BatterySample(battery);
-            snapshot.CpuPackage = emi.Read();
+            DateTimeOffset timestamp = DateTimeOffset.Now;
+            double elapsedSeconds = clock.Elapsed.TotalSeconds;
+            PowerSample cpuPackage = emi.Read();
 
             PowerSample platform;
             double msrPackageWatts;
             bool platformRead = pawnIo.TryRead(out platform, out msrPackageWatts);
 
             if (platformRead)
-                platform = ValidatePlatform(platform, snapshot.CpuPackage, msrPackageWatts);
+                platform = ValidatePlatform(platform, cpuPackage, msrPackageWatts);
 
-            snapshot.Platform = platform;
-            snapshot.WholeSystem = DeriveWholeSystem(platform, battery);
-            return snapshot;
-        }
-
-        internal static PowerSample BatterySample(BatteryReading battery)
-        {
-            if (battery == null || !battery.StatusAvailable || !battery.RateAvailable)
-                return PowerSample.Unsupported(PowerBoundary.BatteryTerminal, battery == null ? "电池状态不可用"
-                    : (!battery.StatusAvailable ? battery.StatusUnavailableReason : battery.RateUnavailableReason));
-            return PowerSample.FromValue(PowerBoundary.BatteryTerminal, MeasurementKind.Measured,
-                battery.PowerWatts, "WMI BatteryStatus；固件采样窗口与内部时间戳未知", TimeSpan.Zero);
+            return PowerSnapshot.Compose(timestamp, elapsedSeconds, battery, cpuPackage, platform);
         }
 
         /// <summary>
@@ -156,89 +257,6 @@ namespace BatteryChargeMeter
             }
 
             return platform;
-        }
-
-        /// <summary>
-        /// Answers the whole-machine power question, which is a different
-        /// question in each supply state and therefore a different boundary.
-        ///
-        /// Running on battery, every watt the machine uses leaves the battery
-        /// terminals, so total consumption is measured outright and no estimate
-        /// is involved. Input power in that state is zero by definition and
-        /// reporting the platform figure as input would be plainly wrong.
-        ///
-        /// Running on external power, input is estimated as platform power plus
-        /// the signed battery power. The sign matters: an adapter at its limit
-        /// lets the battery supplement the load, and clamping that term to zero
-        /// would overstate what the port actually supplies. The sum still omits
-        /// charging-path and conversion losses, so it reads low and stays an
-        /// estimate.
-        ///
-        /// Internal rather than private so the self test can drive it across
-        /// supply states without real hardware.
-        /// </summary>
-        internal static PowerSample DeriveWholeSystem(PowerSample platform, BatteryReading battery)
-        {
-            if (battery == null)
-                return PowerSample.Unsupported(PowerBoundary.SystemLoad, "电池状态不可用");
-
-            if (!battery.StatusAvailable)
-            {
-                return PowerSample.Unsupported(
-                    PowerBoundary.SystemLoad,
-                    String.IsNullOrEmpty(battery.StatusUnavailableReason)
-                        ? "电池状态不可用"
-                        : battery.StatusUnavailableReason);
-            }
-
-            if (!battery.PowerOnline)
-            {
-                if (!battery.RateAvailable)
-                {
-                    return PowerSample.Unsupported(
-                        PowerBoundary.SystemLoad, "电池放电速率不可用");
-                }
-
-                return PowerSample.FromValue(
-                    PowerBoundary.SystemLoad,
-                    MeasurementKind.Measured,
-                    -battery.PowerWatts,
-                    "电池端放电功率",
-                    TimeSpan.Zero);
-            }
-
-            if (platform == null || !platform.Available)
-            {
-                return PowerSample.Unsupported(
-                    PowerBoundary.EstimatedSystemInput,
-                    platform == null ? "平台功率不可用" : platform.UnavailableReason);
-            }
-
-            if (!battery.RateAvailable)
-            {
-                return PowerSample.Unsupported(
-                    PowerBoundary.EstimatedSystemInput, "电池速率不可用");
-            }
-
-            double estimatedWatts = platform.Watts + battery.PowerWatts;
-            if (Double.IsNaN(estimatedWatts) || Double.IsInfinity(estimatedWatts))
-            {
-                return PowerSample.Unsupported(
-                    PowerBoundary.EstimatedSystemInput, "估算结果不是有限数值");
-            }
-            if (estimatedWatts < 0.0)
-            {
-                return PowerSample.Unsupported(
-                    PowerBoundary.EstimatedSystemInput,
-                    "估算结果为负，数据边界或采样窗口不一致");
-            }
-
-            return PowerSample.FromValue(
-                PowerBoundary.EstimatedSystemInput,
-                MeasurementKind.Estimated,
-                estimatedWatts,
-                "平台功率 + 电池端净功率",
-                platform.Window);
         }
 
         public void Dispose()

@@ -4,7 +4,6 @@ using System.ComponentModel;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
-using System.Globalization;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
@@ -128,9 +127,8 @@ namespace BatteryChargeMeter
         private Point lastSuggestedPosition;
         private readonly Label title;
         private readonly Label historyLabel;
-        private readonly PowerHistory history = new PowerHistory();
-        private DisplayMode displayMode = DisplayPreference.Load();
-        private PowerSnapshot latest;
+        private MeterSession session = new MeterSession(DisplayPreference.Load());
+        private MeterView lastView;
         private SegmentedControl modeSegments;
         private Panel footerBand;
         private ToolStripMenuItem wholeModeItem;
@@ -270,7 +268,7 @@ namespace BatteryChargeMeter
             modeSegments = new SegmentedControl("整机功率", "电池端");
             modeSegments.Font = new Font(UiTheme.TextFont, 9f, FontStyle.Regular, GraphicsUnit.Point);
             modeSegments.Bounds = new Rectangle(98, 16, 188, 28);
-            modeSegments.SelectedIndex = displayMode == DisplayMode.Battery ? 1 : 0;
+            modeSegments.SelectedIndex = session.Mode == DisplayMode.Battery ? 1 : 0;
             modeSegments.SelectionChanged += delegate
             {
                 ChangeMode(modeSegments.SelectedIndex == 1 ? DisplayMode.Battery : DisplayMode.WholeSystem);
@@ -320,7 +318,7 @@ namespace BatteryChargeMeter
             BuildElevationControls(startupMessage);
             BuildAutostartControls();
             BuildLanguageControls();
-            ChangeMode(displayMode);
+            ChangeMode(session.Mode);
 
             Shown += delegate
             {
@@ -478,102 +476,52 @@ namespace BatteryChargeMeter
         {
             try
             {
-                latest = powerSources.Capture();
-                PresentSnapshot(latest, true);
+                ShowReading(powerSources.Capture());
             }
             catch (Exception ex)
             {
-                latest = null;
-                history.Clear();
-                UpdateStatistics();
-                stateLabel.Text = Strings.Get("传感器异常");
-                stateLabel.ForeColor = UiTheme.ErrorRed;
-                powerLabel.ForeColor = UiTheme.Muted;
-                powerLabel.Text = "N/A";
-                detailLabel.Text = Strings.Format("电池端 {0} · ≈ {1}", "-- V", "-- A");
-                percentageLabel.Text = "--%";
-                batteryBar.SetValue(-1, UiTheme.ErrorRed);
-                ShowSourceError(batteryValue, ex.Message);
-                ShowSourceError(cpuPackageValue, ex.Message);
-                ShowSourceError(platformValue, ex.Message);
-                ShowSourceError(wholeSystemValue, ex.Message);
-                errorLabel.Text = Strings.Diagnostic(ex.Message);
-                UpdateTrayError();
+                ShowView(session.Fail(ex.Message));
             }
         }
 
-        private void PresentSnapshot(PowerSnapshot snapshot, bool addHistory)
+        internal void ShowReading(PowerSnapshot snapshot)
         {
-            BatteryReading reading = snapshot.Battery;
-            PowerSample selected = PowerDisplay.Select(snapshot, displayMode);
-            BatterySupplyProfile profile = reading.SupplyProfile;
-            Color accent = UiTheme.Accent(profile.Accent);
+            ShowView(session.Observe(snapshot));
+        }
 
-            stateLabel.Text = UiTheme.SupplyCaption(reading.SupplyState);
-            stateLabel.ForeColor = accent;
+        // Binds a view to the controls; all display rules live in MeterSession.
+        private void ShowView(MeterView view)
+        {
+            lastView = view;
+            title.Text = view.Title.Text;
+            title.ForeColor = UiTheme.Tone(view.Title.Tone, view.Accent);
+            sourceTip.SetToolTip(title, view.Title.Tooltip);
+            stateLabel.Text = view.Supply.Text;
+            stateLabel.ForeColor = UiTheme.Tone(view.Supply.Tone, view.Accent);
+            powerLabel.Text = view.Headline.Text;
+            powerLabel.ForeColor = UiTheme.Tone(view.Headline.Tone, view.Accent);
+            sourceTip.SetToolTip(powerLabel, view.Headline.Tooltip);
+            detailLabel.Text = view.Detail;
+            percentageLabel.Text = view.Percentage;
+            batteryBar.SetValue(view.BatteryLevel, UiTheme.Tone(view.BatteryTone, view.Accent));
 
-            title.Text = Strings.Get(PowerSample.LabelFor(selected.Boundary));
-            if (selected.Available)
+            statisticsCaption.Text = view.AverageCaption;
+            historyCaption.Text = view.PeakCaption;
+            sourceTip.SetToolTip(statisticsCaption, view.AverageTooltip);
+            sourceTip.SetToolTip(statisticsLabel, view.AverageTooltip);
+            sourceTip.SetToolTip(historyCaption, view.PeakTooltip);
+            sourceTip.SetToolTip(historyLabel, view.PeakTooltip);
+            statisticsLabel.Text = view.AverageValue;
+            historyLabel.Text = view.PeakValue;
+
+            UpdatePowerSources(view);
+            updatedLabel.Text = view.Updated;
+            if (trayEnabled)
             {
-                powerLabel.Text = (selected.Kind == MeasurementKind.Estimated ? "≈ " : "")
-                    + selected.Watts.ToString("0.00", CultureInfo.InvariantCulture) + " W";
+                if (view.TrayGlyph != null)
+                    SetTrayIcon(view.TrayGlyph, UiTheme.TrayTile(view.Accent));
+                SetTrayTooltip(view.TrayTooltip);
             }
-            else
-            {
-                powerLabel.Text = "N/A";
-            }
-            if (addHistory)
-                history.Add(snapshot.ElapsedSeconds, displayMode, reading.SupplyState, selected);
-            UpdateStatistics();
-            powerLabel.ForeColor = selected.Kind == MeasurementKind.Estimated ? UiTheme.NumericMuted : accent;
-            string voltageText = reading.VoltageAvailable
-                ? reading.VoltageVolts.ToString("0.00", CultureInfo.InvariantCulture) + " V"
-                : "--.-- V";
-            string currentText = reading.CurrentAvailable
-                ? reading.CurrentAmps.ToString("0.00", CultureInfo.InvariantCulture) + " A"
-                : "--.-- A";
-            detailLabel.Text = Strings.Format("电池端 {0} · ≈ {1}", voltageText, currentText);
-            percentageLabel.Text = reading.Percentage >= 0
-                ? reading.Percentage.ToString(CultureInfo.InvariantCulture) + "%"
-                : "--%";
-            batteryBar.SetValue(reading.Percentage, profile.Accent == BatteryAccentKind.Idle ? UiTheme.Muted : accent);
-            UpdatePowerSources(snapshot);
-            sourceTip.SetToolTip(powerLabel, Strings.Diagnostic(selected.Available ? selected.Source : selected.UnavailableReason));
-            sourceTip.SetToolTip(title, sourceTip.GetToolTip(displayMode == DisplayMode.WholeSystem ? wholeSystemName : batteryValue));
-            updatedLabel.Text = snapshot.Timestamp.ToString("HH:mm:ss");
-            UpdateTrayDisplay(selected, profile);
-        }
-
-        private void UpdateTrayDisplay(
-            PowerSample selected, BatterySupplyProfile profile)
-        {
-            if (!trayEnabled)
-                return;
-
-            string glyph = selected.Available ? TrayPowerText(selected.Watts) : "--";
-            SetTrayIcon(glyph, UiTheme.TrayTile(profile.Accent));
-
-            string power = selected.Available
-                ? (selected.Kind == MeasurementKind.Estimated ? "≈ " : "") + selected.Watts.ToString("0.00", CultureInfo.InvariantCulture) + " W"
-                : "N/A";
-            SetTrayTooltip(Strings.Get(PowerSample.LabelFor(selected.Boundary)) + ": " + power);
-        }
-
-        private void UpdateTrayError()
-        {
-            if (!trayEnabled)
-                return;
-            SetTrayIcon("--", UiTheme.TrayNeutral);
-            SetTrayTooltip(Strings.Get(displayMode == DisplayMode.Battery ? "电池端净功率" : "整机功率") + ": N/A");
-        }
-
-        private string TrayPowerText(double powerWatts)
-        {
-            double watts = Math.Abs(powerWatts);
-            if (watts >= 99.5)
-                return "99+";
-            return Math.Round(watts, MidpointRounding.AwayFromZero)
-                .ToString("0", CultureInfo.InvariantCulture);
         }
 
         private void SetTrayTooltip(string value)
@@ -636,41 +584,18 @@ namespace BatteryChargeMeter
             }
         }
 
-        private void UpdateStatistics()
-        {
-            double coverage;
-            double? average = history.Average(out coverage);
-            double? peak = history.Peak();
-            string prefix = latest != null && PowerDisplay.Select(latest, displayMode).Kind == MeasurementKind.Estimated ? "≈ " : "";
-            string averageCoverage = Strings.Format("30 秒均值 · 有效 {0:0.#}s", coverage);
-            double duration = history.Duration(60);
-            string peakCoverage = Strings.Format("60 秒峰值 · 最近 {0}s", duration.ToString("0.#", CultureInfo.InvariantCulture));
-            statisticsCaption.Text = coverage >= 30 - 0.000001 ? Strings.Get("30 秒均值") : Strings.Format("均值 · {0:0.#}/30s", coverage);
-            historyCaption.Text = duration >= 60 - 0.000001 ? Strings.Get("60 秒峰值") : Strings.Format("峰值 · {0:0.#}/60s", duration);
-            sourceTip.SetToolTip(statisticsCaption, averageCoverage);
-            sourceTip.SetToolTip(statisticsLabel, averageCoverage);
-            sourceTip.SetToolTip(historyCaption, peakCoverage);
-            sourceTip.SetToolTip(historyLabel, peakCoverage);
-            statisticsLabel.Text = (average.HasValue ? prefix + average.Value.ToString("0.00", CultureInfo.InvariantCulture) : "--") + " W";
-            historyLabel.Text = (peak.HasValue ? prefix + peak.Value.ToString("0.00", CultureInfo.InvariantCulture) : "--") + " W";
-        }
-
         private void ChangeMode(DisplayMode mode)
         {
-            if (displayMode != mode)
-            {
-                displayMode = mode;
-                history.Clear();
+            if (session.Mode != mode)
                 DisplayPreference.Save(mode);
-            }
+            MeterView view = session.SetMode(mode);
             wholeModeItem.Checked = mode == DisplayMode.WholeSystem;
             batteryModeItem.Checked = mode == DisplayMode.Battery;
             int index = mode == DisplayMode.Battery ? 1 : 0;
             if (modeSegments.SelectedIndex != index)
                 modeSegments.SelectedIndex = index;
             LayoutSourceRows();
-            if (latest != null)
-                PresentSnapshot(latest, history.Points.Count == 0);
+            ShowView(view);
         }
 
         private void BuildElevationControls(string message)
@@ -779,71 +704,32 @@ namespace BatteryChargeMeter
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
 
-            if (args.Length == 2 && String.Equals(args[0], "--screenshot", StringComparison.OrdinalIgnoreCase))
+            switch (route.Command)
             {
-                using (MainForm preview = new MainForm(false))
-                    preview.RenderPreview(args[1]);
-                return;
-            }
-
-            if ((args.Length == 3 || args.Length == 4)
-                && String.Equals(args[0], "--dpi-preview", StringComparison.OrdinalIgnoreCase))
-            {
-                int targetDpi;
-                if (!Int32.TryParse(args[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out targetDpi))
-                    throw new ArgumentException("DPI must be an integer.", "args");
-
-                using (MainForm preview = new MainForm(false))
-                {
-                    if (args.Length == 3)
-                    {
-                        preview.RenderDpiTransitionPreview(args[1], targetDpi);
-                    }
-                    else
-                    {
-                        int returnDpi;
-                        if (!Int32.TryParse(args[3], NumberStyles.Integer, CultureInfo.InvariantCulture, out returnDpi))
-                            throw new ArgumentException("Return DPI must be an integer.", "args");
-                        preview.RenderDpiTransitionPreview(args[1], targetDpi, returnDpi);
-                    }
-                }
-                return;
-            }
-
-            if (args.Length == 2 && String.Equals(args[0], "--self-test", StringComparison.OrdinalIgnoreCase))
-            {
-                bool passed;
-                string report = PowerSelfTest.Run(out passed);
-                File.WriteAllText(args[1], report);
-                Environment.Exit(passed ? 0 : 1);
-                return;
-            }
-
-            if (args.Length == 2
-                && String.Equals(args[0], "--third-party-notices", StringComparison.OrdinalIgnoreCase))
-            {
-                ThirdPartyNotices.WriteTo(args[1]);
-                return;
-            }
-
-            if ((args.Length == 2 || args.Length == 3)
-                && String.Equals(args[0], "--power-probe", StringComparison.OrdinalIgnoreCase))
-            {
-                int seconds = 5;
-                if (args.Length == 3
-                    && !Int32.TryParse(args[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out seconds))
-                    throw new ArgumentException("Seconds must be an integer.", "args");
-
-                File.WriteAllText(args[1], PowerDiagnostics.Run(seconds));
-                return;
-            }
-
-            if (args.Length == 4 && String.Equals(args[0], "--tray-preview", StringComparison.OrdinalIgnoreCase))
-            {
-                bool discharging = String.Equals(args[3], "discharging", StringComparison.OrdinalIgnoreCase);
-                using (MainForm preview = new MainForm(false))
-                    preview.RenderTrayIconPreview(args[1], args[2], discharging);
-                return;
+                case "--screenshot":
+                    using (MainForm preview = new MainForm(false))
+                        preview.RenderPreview(route.Path);
+                    return;
+                case "--dpi-preview":
+                    using (MainForm preview = new MainForm(false))
+                        preview.RenderDpiTransitionPreview(route.Path, route.Dpis);
+                    return;
+                case "--self-test":
+                    bool passed;
+                    string report = PowerSelfTest.Run(out passed);
+                    File.WriteAllText(route.Path, report);
+                    Environment.Exit(passed ? 0 : 1);
+                    return;
+                case "--third-party-notices":
+                    ThirdPartyNotices.WriteTo(route.Path);
+                    return;
+                case "--power-probe":
+                    File.WriteAllText(route.Path, PowerDiagnostics.Run(route.Seconds));
+                    return;
+                case "--tray-preview":
+                    using (MainForm preview = new MainForm(false))
+                        preview.RenderTrayIconPreview(route.Path, route.TrayGlyph, route.TrayDischarging);
+                    return;
             }
 
             Environment.ExitCode = 2;

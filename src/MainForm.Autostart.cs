@@ -67,8 +67,7 @@ namespace BatteryChargeMeter
             autostartMenuItem.Checked = enabled;
             autostartMenuItem.ToolTipText = known ? "" : Strings.Get("状态读取失败，请查看主窗口中的原因。");
             updatingAutostart = false;
-            if (latest != null)
-                UpdatePowerSources(latest);
+            RefreshDiagnostics();
         }
 
         private void ChangeAutostart(bool enable)

@@ -8,6 +8,11 @@ using System.Windows.Forms;
 
 namespace BatteryChargeMeter
 {
+    /// <summary>
+    /// The one parse of the command line. A valid route carries every argument
+    /// its command needs, already converted, so the dispatcher never re-reads
+    /// the raw arguments.
+    /// </summary>
     internal sealed class StartupRoute
     {
         public string Command = "gui";
@@ -15,6 +20,13 @@ namespace BatteryChargeMeter
         public bool Valid;
         public bool StartHidden;
         public bool Handoff;
+        // Output file of --self-test, --third-party-notices, --screenshot,
+        // --power-probe, --dpi-preview and --tray-preview.
+        public string Path;
+        public int Seconds = 5;
+        public int[] Dpis;
+        public string TrayGlyph;
+        public bool TrayDischarging;
 
         public static StartupRoute Parse(string[] args)
         {
@@ -34,7 +46,8 @@ namespace BatteryChargeMeter
                 return route;
             }
             route.Command = command;
-            int number;
+            if (args.Length > 1)
+                route.Path = args[1];
             switch (command)
             {
                 case "--remove-autostart":
@@ -48,23 +61,35 @@ namespace BatteryChargeMeter
                     break;
                 case "--power-probe":
                     route.Valid = args.Length == 2 || (args.Length == 3
-                        && Int32.TryParse(args[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out number)
-                        && number >= 1 && number <= 3600);
+                        && TryParse(args[2], 1, 3600, out route.Seconds));
                     break;
                 case "--dpi-preview":
                     route.Valid = args.Length == 3 || args.Length == 4;
+                    if (route.Valid)
+                        route.Dpis = new int[args.Length - 2];
                     for (int i = 2; route.Valid && i < args.Length; i++)
-                        route.Valid = Int32.TryParse(args[i], out number) && number >= 96 && number <= 768;
+                        route.Valid = TryParse(args[i], 96, 768, out route.Dpis[i - 2]);
                     break;
                 case "--tray-preview":
                     route.Valid = args.Length == 4 && !String.IsNullOrWhiteSpace(args[2])
                         && (String.Equals(args[3], "charging", StringComparison.OrdinalIgnoreCase)
                             || String.Equals(args[3], "discharging", StringComparison.OrdinalIgnoreCase));
+                    if (route.Valid)
+                    {
+                        route.TrayGlyph = args[2];
+                        route.TrayDischarging = String.Equals(args[3], "discharging", StringComparison.OrdinalIgnoreCase);
+                    }
                     break;
             }
             if (args.Length > 1 && String.IsNullOrWhiteSpace(args[1]))
                 route.Valid = false;
             return route;
+        }
+
+        private static bool TryParse(string text, int minimum, int maximum, out int number)
+        {
+            return Int32.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out number)
+                && number >= minimum && number <= maximum;
         }
     }
 
