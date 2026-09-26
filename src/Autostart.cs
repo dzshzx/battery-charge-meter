@@ -15,9 +15,25 @@ namespace BatteryChargeMeter
         public bool Exists;
         public bool Enabled;
         public bool ThisCopy;
+        // True when the task runs this user's admin-only protected copy.
+        public bool Protected;
+        // The installation that owns startup (the protected copy's source).
         public string Executable;
+        // The file the task actually executes.
+        public string Target;
         public string Registration;
         public string RepairReason;
+    }
+
+    internal enum AutostartSync
+    {
+        Current = 0,
+        // This installation's task runs an outdated protected copy.
+        StaleCopy = 3,
+        // This installation's task still runs a user-writable file.
+        Unprotected = 4,
+        // No task runs this installation's protected copy any more.
+        OrphanCopy = 5
     }
 
     // Use the Windows-provided Task Scheduler COM API. No service, password,
@@ -25,15 +41,21 @@ namespace BatteryChargeMeter
     internal sealed class AutostartManager : IDisposable
     {
         private const string Owner = "BatteryChargeMeter.Logon.v1";
-        private readonly string executable;
+        // The running file, and the installation it represents. They differ
+        // only when running from the protected copy.
+        private readonly string image;
+        private readonly string identity;
+        private readonly ProtectedCopy copy;
         private readonly string sid;
         private readonly string taskName;
         private object service;
         private object folder;
 
-        internal AutostartManager(string path, string userSid, string name)
+        internal AutostartManager(string path, string userSid, string name, string protectedRoot)
         {
-            executable = Path.GetFullPath(path);
+            image = Path.GetFullPath(path);
+            identity = ProtectedCopy.IdentityFor(image, userSid);
+            copy = new ProtectedCopy(protectedRoot, userSid);
             sid = userSid;
             taskName = name;
             try
@@ -54,8 +76,10 @@ namespace BatteryChargeMeter
             string userSid;
             using (WindowsIdentity identity = WindowsIdentity.GetCurrent())
                 userSid = identity.User.Value;
-            return new AutostartManager(path, userSid, "BatteryChargeMeter.Logon." + userSid);
+            return new AutostartManager(path, userSid, "BatteryChargeMeter.Logon." + userSid, ProtectedCopy.DefaultRoot);
         }
+
+        internal string Identity { get { return identity; } }
 
         internal AutostartState Read()
         {
@@ -72,7 +96,7 @@ namespace BatteryChargeMeter
                         return new AutostartState();
                     throw;
                 }
-                return Inspect((string)Get(task, "Xml"), executable, sid);
+                return Inspect((string)Get(task, "Xml"), identity, sid, copy.Executable, copy.ReadSource());
             }
             finally
             {
@@ -91,46 +115,129 @@ namespace BatteryChargeMeter
         {
             AutostartState before = Read();
             RequireUnchanged(expected, before);
+            Register(copy.Install(image, identity));
+        }
+
+        // The protected copy must already hold this installation's files.
+        private void Register(int stoppedInstances)
+        {
             object registered = null;
             try
             {
                 registered = Call(folder, "RegisterTask", taskName,
-                    BuildXml(executable, sid), 6 | 0x10, sid, null, 3,
+                    BuildXml(copy.Executable, sid), 6 | 0x10, sid, null, 3,
                     "D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GRGXSD;;;" + sid + ")");
                 // The same user's ordinary token may inspect, run and delete
                 // the task (including per-user uninstall), but cannot rewrite
                 // its elevated action. Keep full control for SYSTEM/admins and
-                // suppress Scheduler's automatic extra principal ACE.
+                // suppress Scheduler's automatic extra principal ACE. The action
+                // itself lives in an admin-only directory (ProtectedCopy).
             }
             finally
             {
                 Release(registered);
             }
             AutostartState after = Read();
-            if (!after.ThisCopy || !after.Enabled)
+            if (!after.ThisCopy || !after.Enabled || !after.Protected)
                 throw new InvalidOperationException("自启任务写入后的读取校验失败。");
+            if (stoppedInstances > 0)
+                RunTask();
+        }
+
+        private void RunTask()
+        {
+            object task = null;
+            try
+            {
+                task = Call(folder, "GetTask", taskName);
+                Release(Call(task, "Run", (object)null));
+            }
+            catch (Exception)
+            {
+                // The instance returns at the next sign-in.
+            }
+            finally
+            {
+                Release(task);
+            }
         }
 
         internal static void RequireUnchanged(AutostartState expected, AutostartState actual)
         {
+            // Every protected task has the same action, so the owner recorded
+            // with the copy is part of what the user confirmed.
             if (expected == null || expected.Exists != actual.Exists
-                || !String.Equals(expected.Registration, actual.Registration, StringComparison.Ordinal))
+                || !String.Equals(expected.Registration, actual.Registration, StringComparison.Ordinal)
+                || !String.Equals(expected.Executable, actual.Executable, StringComparison.OrdinalIgnoreCase))
                 throw new InvalidOperationException("自启任务已被另一份程序修改，请重新读取并确认后再试。");
         }
 
-        internal void Disable()
+        // Deletes this installation's task and, when elevated, its protected
+        // copy. Returns true when a copy owned by this installation remains
+        // because deleting it requires an elevated process.
+        internal bool Disable()
         {
-            Mutate(DisableCore);
+            bool remains = false;
+            Mutate(delegate { remains = DisableCore(); });
+            return remains;
         }
 
-        private void DisableCore()
+        private bool DisableCore()
         {
             AutostartState before = Read();
-            if (!before.Exists || !before.ThisCopy)
-                return;
-            Call(folder, "DeleteTask", taskName, 0);
-            if (Read().ThisCopy)
-                throw new InvalidOperationException("自启任务删除后的读取校验失败。");
+            if (before.Exists && before.ThisCopy)
+            {
+                Call(folder, "DeleteTask", taskName, 0);
+                if (Read().ThisCopy)
+                    throw new InvalidOperationException("自启任务删除后的读取校验失败。");
+            }
+            if (!copy.OwnedBy(identity))
+                return false;
+            if (!Startup.IsElevated())
+                return true;
+            copy.Remove();
+            return false;
+        }
+
+        // Brings the protected copy in line with this installation: migrates a
+        // task that still runs a user-writable file, refreshes an outdated
+        // copy, and removes a copy no task uses. Without elevation it only
+        // reports what an elevated run would change. A protected copy never
+        // synchronizes, because its source is user-writable.
+        internal AutostartSync Synchronize(bool apply)
+        {
+            AutostartSync result = AutostartSync.Current;
+            Mutate(delegate { result = SynchronizeCore(apply); });
+            return result;
+        }
+
+        private AutostartSync SynchronizeCore(bool apply)
+        {
+            if (!ProtectedCopy.SamePath(image, identity))
+                return AutostartSync.Current;
+            AutostartState state = Read();
+            AutostartSync needed;
+            if (state.Exists && state.ThisCopy && !state.Protected)
+                needed = AutostartSync.Unprotected;
+            else if (state.Exists && state.ThisCopy)
+                needed = copy.Matches(image) ? AutostartSync.Current : AutostartSync.StaleCopy;
+            else
+                needed = copy.OwnedBy(identity) ? AutostartSync.OrphanCopy : AutostartSync.Current;
+            if (!apply || needed == AutostartSync.Current)
+                return needed;
+            if (!Startup.IsElevated())
+                throw new InvalidOperationException("写入或删除自启副本需要管理员权限。");
+            if (needed == AutostartSync.Unprotected)
+                Register(copy.Install(image, identity));
+            else if (state.Exists && state.ThisCopy)
+            {
+                int stopped = copy.Install(image, identity);
+                if (stopped > 0 && state.Enabled)
+                    RunTask();
+            }
+            else
+                copy.Remove();
+            return AutostartSync.Current;
         }
 
         private void Mutate(Action change)
@@ -163,7 +270,8 @@ namespace BatteryChargeMeter
             }
         }
 
-        internal static AutostartState Inspect(string xml, string path, string userSid)
+        internal static AutostartState Inspect(string xml, string path, string userSid,
+            string protectedExecutable, string protectedSource)
         {
             XmlDocument document = new XmlDocument();
             document.XmlResolver = null;
@@ -187,15 +295,26 @@ namespace BatteryChargeMeter
                 && DefaultFalse(document, ns, "RunOnlyIfNetworkAvailable")
                 && Text(document, ns, "/t:Task/t:Settings/t:ExecutionTimeLimit") == "PT0S"
                 && Text(document, ns, "/t:Task/t:Settings/t:MultipleInstancesPolicy") == "IgnoreNew";
+            bool isProtected = protectedExecutable != null && ProtectedCopy.SamePath(target, protectedExecutable);
+            bool thisCopy = isProtected
+                ? protectedSource != null && ProtectedCopy.SamePath(protectedSource, path)
+                : IsCurrentCopy(target, path);
             return new AutostartState
             {
                 Exists = true,
-                Executable = target,
-                ThisCopy = IsCurrentCopy(target, path),
-                Enabled = enabled && correctPolicy && correctSettings,
+                Executable = isProtected && protectedSource != null ? protectedSource : target,
+                Target = target,
+                Protected = isProtected,
+                ThisCopy = thisCopy,
+                // An elevated task that runs a user-writable file is never
+                // reported as working startup, even if its policy is intact.
+                Enabled = enabled && correctPolicy && correctSettings && isProtected,
                 Registration = document.OuterXml,
                 RepairReason = !correctPolicy || !correctSettings
-                    ? "自启任务设置已变化（权限、触发条件或运行限制），请重新勾选以修复。" : null
+                    ? "自启任务设置已变化（权限、触发条件或运行限制），请重新勾选以修复。"
+                    : !isProtected
+                        ? "自启仍指向普通权限可替换的程序文件，请以管理员身份重新勾选，改用受保护副本。"
+                        : null
             };
         }
 

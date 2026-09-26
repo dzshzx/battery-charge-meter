@@ -40,7 +40,7 @@ namespace BatteryChargeMeter
                     if (autostartCheckBox != null && !autostartCheckBox.IsDisposed)
                         sourceTip.SetToolTip(autostartCheckBox, state.Exists && !state.ThisCopy
                         ? Strings.Format("当前自启指向：{0}；勾选可确认更换。", state.Executable)
-                        : Strings.Get("以当前 Windows 用户登录后，管理员权限运行并留在托盘。移动程序后需重新启用。"));
+                        : Strings.Get("以当前 Windows 用户登录后，从仅管理员可写的受保护副本以管理员权限运行并留在托盘。移动程序后需重新启用。"));
                 }
             }
             catch (Exception error)
@@ -73,17 +73,18 @@ namespace BatteryChargeMeter
                         AutostartState state = manager.Read();
                         bool replace = state.Exists && !state.ThisCopy;
                         if (replace && MessageBox.Show(this,
-                            Strings.Format("自启当前指向：\n{0}\n\n更换为：\n{1}？", state.Executable, Application.ExecutablePath),
+                            Strings.Format("自启当前指向：\n{0}\n\n更换为：\n{1}？", state.Executable, manager.Identity),
                             Strings.Get("更换自启程序"), MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
                             return;
                         manager.Enable(state);
                     }
-                    else
+                    else if (manager.Disable())
                     {
-                        manager.Disable();
+                        autostartMessage = "已关闭此程序的开机自启；受保护副本将在下次以管理员身份启动时删除。";
+                        return;
                     }
                 }
-                autostartMessage = enable ? "已启用开机自启：登录后以管理员权限运行，在托盘显示。" : "已关闭此程序的开机自启。";
+                autostartMessage = enable ? "已启用开机自启：登录后以管理员权限运行受保护副本，在托盘显示。" : "已关闭此程序的开机自启。";
             }
             catch (Exception error)
             {

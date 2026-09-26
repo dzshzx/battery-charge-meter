@@ -7,7 +7,9 @@ using System.Reflection;
 [assembly: AssemblyProduct("Power Meter")]
 
 // Installed only over an existing BatteryChargeMeter.exe. Keeps old shortcuts
-// and elevated logon tasks working without rewriting their action or ACL.
+// working. It lives in a user-writable folder, so setup migrates any elevated
+// logon task that still runs it to the admin-only protected copy (or deletes
+// the task when elevation is declined); it is never an elevated target.
 internal static class LegacyLauncher
 {
     [STAThread]
