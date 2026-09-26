@@ -181,6 +181,15 @@ namespace BatteryChargeMeter
                 Startup.Route(route, false, launch);
             }
             failures += Check(log, "invalid route cannot launch UAC", launches == 1);
+            StartupRoute probe = StartupRoute.Parse(new string[] { "--POWER-PROBE", "out.txt", "12" });
+            StartupRoute defaultProbe = StartupRoute.Parse(new string[] { "--power-probe", "out.txt" });
+            StartupRoute dpi = StartupRoute.Parse(new string[] { "--dpi-preview", "shot.png", "168", "96" });
+            StartupRoute tray = StartupRoute.Parse(new string[] { "--tray-preview", "icon.png", "99+", "Discharging" });
+            failures += Check(log, "CLI routes carry parsed arguments for dispatch",
+                probe.Valid && probe.Command == "--power-probe" && probe.Path == "out.txt" && probe.Seconds == 12
+                && defaultProbe.Seconds == 5
+                && dpi.Path == "shot.png" && dpi.Dpis.Length == 2 && dpi.Dpis[0] == 168 && dpi.Dpis[1] == 96
+                && tray.Path == "icon.png" && tray.TrayGlyph == "99+" && tray.TrayDischarging);
             ElevationResult cancel = Startup.Launch(delegate { throw new System.ComponentModel.Win32Exception(1223); });
             ElevationResult failure = Startup.Launch(delegate { throw new InvalidOperationException("failure"); });
             failures += Check(log, "cancel and launch failure retain ordinary GUI with reason", !cancel.Started && cancel.Message.Contains("取消") && !failure.Started && failure.Message.Contains("failure") && !Startup.Launch(delegate { return false; }).Started);

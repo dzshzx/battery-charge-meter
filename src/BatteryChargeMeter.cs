@@ -4,7 +4,6 @@ using System.ComponentModel;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
-using System.Globalization;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
@@ -705,71 +704,32 @@ namespace BatteryChargeMeter
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
 
-            if (args.Length == 2 && String.Equals(args[0], "--screenshot", StringComparison.OrdinalIgnoreCase))
+            switch (route.Command)
             {
-                using (MainForm preview = new MainForm(false))
-                    preview.RenderPreview(args[1]);
-                return;
-            }
-
-            if ((args.Length == 3 || args.Length == 4)
-                && String.Equals(args[0], "--dpi-preview", StringComparison.OrdinalIgnoreCase))
-            {
-                int targetDpi;
-                if (!Int32.TryParse(args[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out targetDpi))
-                    throw new ArgumentException("DPI must be an integer.", "args");
-
-                using (MainForm preview = new MainForm(false))
-                {
-                    if (args.Length == 3)
-                    {
-                        preview.RenderDpiTransitionPreview(args[1], targetDpi);
-                    }
-                    else
-                    {
-                        int returnDpi;
-                        if (!Int32.TryParse(args[3], NumberStyles.Integer, CultureInfo.InvariantCulture, out returnDpi))
-                            throw new ArgumentException("Return DPI must be an integer.", "args");
-                        preview.RenderDpiTransitionPreview(args[1], targetDpi, returnDpi);
-                    }
-                }
-                return;
-            }
-
-            if (args.Length == 2 && String.Equals(args[0], "--self-test", StringComparison.OrdinalIgnoreCase))
-            {
-                bool passed;
-                string report = PowerSelfTest.Run(out passed);
-                File.WriteAllText(args[1], report);
-                Environment.Exit(passed ? 0 : 1);
-                return;
-            }
-
-            if (args.Length == 2
-                && String.Equals(args[0], "--third-party-notices", StringComparison.OrdinalIgnoreCase))
-            {
-                ThirdPartyNotices.WriteTo(args[1]);
-                return;
-            }
-
-            if ((args.Length == 2 || args.Length == 3)
-                && String.Equals(args[0], "--power-probe", StringComparison.OrdinalIgnoreCase))
-            {
-                int seconds = 5;
-                if (args.Length == 3
-                    && !Int32.TryParse(args[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out seconds))
-                    throw new ArgumentException("Seconds must be an integer.", "args");
-
-                File.WriteAllText(args[1], PowerDiagnostics.Run(seconds));
-                return;
-            }
-
-            if (args.Length == 4 && String.Equals(args[0], "--tray-preview", StringComparison.OrdinalIgnoreCase))
-            {
-                bool discharging = String.Equals(args[3], "discharging", StringComparison.OrdinalIgnoreCase);
-                using (MainForm preview = new MainForm(false))
-                    preview.RenderTrayIconPreview(args[1], args[2], discharging);
-                return;
+                case "--screenshot":
+                    using (MainForm preview = new MainForm(false))
+                        preview.RenderPreview(route.Path);
+                    return;
+                case "--dpi-preview":
+                    using (MainForm preview = new MainForm(false))
+                        preview.RenderDpiTransitionPreview(route.Path, route.Dpis);
+                    return;
+                case "--self-test":
+                    bool passed;
+                    string report = PowerSelfTest.Run(out passed);
+                    File.WriteAllText(route.Path, report);
+                    Environment.Exit(passed ? 0 : 1);
+                    return;
+                case "--third-party-notices":
+                    ThirdPartyNotices.WriteTo(route.Path);
+                    return;
+                case "--power-probe":
+                    File.WriteAllText(route.Path, PowerDiagnostics.Run(route.Seconds));
+                    return;
+                case "--tray-preview":
+                    using (MainForm preview = new MainForm(false))
+                        preview.RenderTrayIconPreview(route.Path, route.TrayGlyph, route.TrayDischarging);
+                    return;
             }
 
             Environment.ExitCode = 2;
