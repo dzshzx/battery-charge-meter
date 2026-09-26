@@ -333,7 +333,7 @@ namespace BatteryChargeMeter
             AutostartRemoval result = AutostartRemoval.Removed;
             Mutate(delegate
             {
-                AutostartPlan plan = AutostartPolicy.Disable(Gather());
+                AutostartPlan plan = AutostartPolicy.Disable(Gather(false));
                 Execute(plan);
                 result = plan.Removal;
             });
@@ -348,7 +348,7 @@ namespace BatteryChargeMeter
             AutostartSync result = AutostartSync.Current;
             Mutate(delegate
             {
-                AutostartPlan plan = AutostartPolicy.Synchronize(Gather(), apply);
+                AutostartPlan plan = AutostartPolicy.Synchronize(Gather(true), apply);
                 Execute(plan);
                 result = plan.Sync;
             });
@@ -383,15 +383,21 @@ namespace BatteryChargeMeter
             }
         }
 
-        private AutostartFacts Gather()
+        private AutostartFacts Gather(bool forSynchronize)
         {
             AutostartFacts facts = new AutostartFacts();
-            facts.Task = ReadOwn(out facts.Foreign);
-            facts.RunningFromCopy = !ProtectedCopy.SamePath(image, identity);
-            facts.CopyOwned = copy.OwnedBy(identity);
-            facts.CopyMatches = facts.Task.Exists && facts.Task.ThisCopy && facts.Task.Protected
-                && copy.Matches(image);
             facts.Elevated = elevated;
+            facts.RunningFromCopy = !ProtectedCopy.SamePath(image, identity);
+            // A protected copy never synchronizes, so it reads nothing.
+            if (forSynchronize && facts.RunningFromCopy)
+                return facts;
+            facts.Task = ReadOwn(out facts.Foreign);
+            facts.CopyOwned = copy.OwnedBy(identity);
+            // Only synchronization compares file contents. Removal must never
+            // depend on reading files beside the user-writable installation,
+            // so uninstall and the in-app switch always have a way out.
+            facts.CopyMatches = forSynchronize && facts.Task.Exists && facts.Task.ThisCopy
+                && facts.Task.Protected && copy.Matches(image);
             return facts;
         }
 

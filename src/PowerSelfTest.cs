@@ -387,9 +387,18 @@ namespace BatteryChargeMeter
             plan = AutostartPolicy.Synchronize(Facts(false, false, false, false, false, true, false, false), false);
             AutostartPlan orphan = AutostartPolicy.Synchronize(Facts(false, false, false, false, false, true, false, true), true);
             AutostartPlan foreignOrphan = AutostartPolicy.Synchronize(Facts(false, false, false, false, true, true, false, false), false);
+            AutostartPlan foreignApplied = AutostartPolicy.Synchronize(Facts(false, false, false, false, true, true, false, true), true);
             failures += Check(log, "a copy no task of this installation runs is removed, including behind a foreign task",
                 plan.Sync == AutostartSync.OrphanCopy && Steps(orphan) == "remove"
-                && foreignOrphan.Sync == AutostartSync.OrphanCopy);
+                && foreignOrphan.Sync == AutostartSync.OrphanCopy && Steps(foreignApplied) == "remove");
+            plan = AutostartPolicy.Synchronize(Facts(true, true, true, true, false, true, true, false), true);
+            AutostartPlan staleOrdinary = AutostartPolicy.Synchronize(Facts(true, true, true, true, false, true, false, false), true);
+            AutostartPlan orphanOrdinary = AutostartPolicy.Synchronize(Facts(false, false, false, false, false, true, false, false), true);
+            AutostartPlan nothing = AutostartPolicy.Synchronize(Facts(false, false, false, false, false, false, false, false), true);
+            failures += Check(log, "ordinary sync succeeds when current and refuses only real changes",
+                plan.Sync == AutostartSync.Current && Steps(plan) == "none"
+                && Steps(staleOrdinary) == "refuse" && Steps(orphanOrdinary) == "refuse"
+                && nothing.Sync == AutostartSync.Current && Steps(nothing) == "none");
             plan = AutostartPolicy.Synchronize(Facts(true, false, true, true, false, false, false, true), true);
             failures += Check(log, "another installation's startup is left alone",
                 plan.Sync == AutostartSync.Current && Steps(plan) == "none");
@@ -411,6 +420,9 @@ namespace BatteryChargeMeter
             plan = AutostartPolicy.Disable(Facts(true, false, true, true, false, false, false, false));
             failures += Check(log, "removal never deletes another installation's task",
                 plan.Removal == AutostartRemoval.Removed && Steps(plan) == "none");
+            plan = AutostartPolicy.Disable(Facts(true, true, false, true, false, false, false, false));
+            failures += Check(log, "ordinary removal disarms an unprotected task without a copy",
+                plan.Removal == AutostartRemoval.Removed && Steps(plan) == "delete");
 
             // Enable.
             AutostartState absent = new AutostartState();
@@ -418,6 +430,7 @@ namespace BatteryChargeMeter
             failures += Check(log, "enabling requires elevation and an unchanged confirmation",
                 AutostartPolicy.Enable(false, absent, null).Refusal == AutostartPolicy.ElevationRequired
                 && AutostartPolicy.Enable(true, absent, other).Refusal == AutostartPolicy.ChangedElsewhere
+                && AutostartPolicy.Enable(true, null, absent).Refusal == AutostartPolicy.ChangedElsewhere
                 && Steps(AutostartPolicy.Enable(true, other, other)) == "install+register+restart");
 
             // In-app switch.
@@ -427,11 +440,14 @@ namespace BatteryChargeMeter
                 && status.Notice == AutostartPolicy.ForeignTaskNotice + "BatteryChargeMeter.Logon.S-1");
             AutostartState working = new AutostartState { Exists = true, ThisCopy = true, Protected = true, Enabled = true };
             AutostartState repair = new AutostartState { Exists = true, ThisCopy = true, RepairReason = "repair" };
+            AutostartState enabledRepair = new AutostartState { Exists = true, ThisCopy = true, Enabled = true, RepairReason = "repair" };
             failures += Check(log, "switch reflects working startup and asks for repair",
                 AutostartPolicy.Describe(working, false, "t").Switch == AutostartSwitch.On
                 && AutostartPolicy.Describe(working, false, "t").Notice == null
                 && AutostartPolicy.Describe(repair, false, "t").Switch == AutostartSwitch.Off
-                && AutostartPolicy.Describe(repair, false, "t").Notice == "repair");
+                && AutostartPolicy.Describe(repair, false, "t").Notice == "repair"
+                && AutostartPolicy.Describe(enabledRepair, false, "t").Switch == AutostartSwitch.On
+                && AutostartPolicy.Describe(enabledRepair, false, "t").Notice == "repair");
             failures += Check(log, "switch names another installation's startup and reports read failures",
                 AutostartPolicy.Describe(other, false, "t").Tooltip.Contains(other.Executable)
                 && AutostartPolicy.Describe(absent, false, "t").Switch == AutostartSwitch.Off
