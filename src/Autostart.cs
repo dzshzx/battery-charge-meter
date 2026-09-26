@@ -59,6 +59,187 @@ namespace BatteryChargeMeter
         }
     }
 
+    // What the manager read before deciding: the task (a foreign same-name
+    // task reads as absent), the protected copy and the process token.
+    internal sealed class AutostartFacts
+    {
+        public AutostartState Task = new AutostartState();
+        public bool Foreign;
+        // This process is itself the protected copy, whose source is
+        // user-writable, so it never synchronizes from it.
+        public bool RunningFromCopy;
+        // The copy's recorded source is this installation.
+        public bool CopyOwned;
+        // The copy holds exactly this installation's files.
+        public bool CopyMatches;
+        public bool Elevated;
+    }
+
+    // A decision, carried out by the manager in this order: delete the task,
+    // install the copy, register the task, restart stopped instances, remove
+    // the copy. A refusal performs nothing.
+    internal sealed class AutostartPlan
+    {
+        public AutostartSync Sync;
+        public AutostartRemoval Removal;
+        public bool DeleteTask;
+        public bool InstallCopy;
+        public bool RegisterTask;
+        // Restart logon instances the copy installation stopped.
+        public bool RestartIfStopped;
+        public bool RemoveCopy;
+        public string Refusal;
+    }
+
+    internal enum AutostartSwitch
+    {
+        Off,
+        On,
+        Unknown
+    }
+
+    // How the in-app switch presents startup. Notice is a diagnostic source
+    // string; Tooltip is already localized.
+    internal sealed class AutostartStatus
+    {
+        public AutostartSwitch Switch;
+        public string Notice;
+        public string Tooltip;
+    }
+
+    // Every startup decision, as pure functions of what was read. The manager
+    // gathers facts and executes plans; nothing here touches the scheduler,
+    // the file system or the process token.
+    internal static class AutostartPolicy
+    {
+        internal const string ElevationRequired = "请先点击下方“以管理员身份重新启动”，再勾选开机自启。";
+        internal const string ElevationRequiredForCopy = "写入或删除自启副本需要管理员权限。";
+        internal const string ChangedElsewhere = "自启任务已被另一份程序修改，请重新读取并确认后再试。";
+        // Chinese lookup key ending in {0}; the task name follows verbatim.
+        internal const string ForeignTaskNotice = "同名自启任务不属于本程序，已保留未改；如不再需要，请在任务计划程序库中手工删除：";
+
+        // Migrates a task that still runs a user-writable file, refreshes an
+        // outdated copy, and removes a copy no task uses. Without apply it
+        // only reports what an elevated run would change.
+        internal static AutostartPlan Synchronize(AutostartFacts facts, bool apply)
+        {
+            AutostartPlan plan = new AutostartPlan();
+            if (facts.RunningFromCopy)
+                return plan;
+            AutostartState task = facts.Task;
+            AutostartSync needed;
+            if (task.Exists && task.ThisCopy && !task.Protected)
+                needed = AutostartSync.Unprotected;
+            else if (task.Exists && task.ThisCopy)
+                needed = facts.CopyMatches ? AutostartSync.Current : AutostartSync.StaleCopy;
+            else
+                needed = facts.CopyOwned ? AutostartSync.OrphanCopy : AutostartSync.Current;
+            plan.Sync = needed;
+            if (!apply || needed == AutostartSync.Current)
+                return plan;
+            if (!facts.Elevated)
+                return Refuse(plan, ElevationRequiredForCopy);
+            plan.Sync = AutostartSync.Current;
+            switch (needed)
+            {
+                case AutostartSync.Unprotected:
+                    plan.InstallCopy = true;
+                    plan.RegisterTask = true;
+                    plan.RestartIfStopped = true;
+                    break;
+                case AutostartSync.StaleCopy:
+                    plan.InstallCopy = true;
+                    plan.RestartIfStopped = task.Enabled;
+                    break;
+                default:
+                    plan.RemoveCopy = true;
+                    break;
+            }
+            return plan;
+        }
+
+        // Deletes this installation's task and, when elevated, its copy. A
+        // foreign task is left unchanged and reported; CopyNeedsElevation takes
+        // precedence because the elevated rerun reports the foreign task again.
+        internal static AutostartPlan Disable(AutostartFacts facts)
+        {
+            AutostartPlan plan = new AutostartPlan();
+            plan.DeleteTask = facts.Task.Exists && facts.Task.ThisCopy;
+            plan.Removal = facts.Foreign ? AutostartRemoval.ForeignTaskKept : AutostartRemoval.Removed;
+            if (!facts.CopyOwned)
+                return plan;
+            if (!facts.Elevated)
+            {
+                plan.Removal = AutostartRemoval.CopyNeedsElevation;
+                return plan;
+            }
+            plan.RemoveCopy = true;
+            return plan;
+        }
+
+        // Every protected task has the same action, so the owner recorded with
+        // the copy is part of what the user confirmed.
+        internal static AutostartPlan Enable(bool elevated, AutostartState expected, AutostartState actual)
+        {
+            AutostartPlan plan = new AutostartPlan();
+            if (!elevated)
+                return Refuse(plan, ElevationRequired);
+            if (!Unchanged(expected, actual))
+                return Refuse(plan, ChangedElsewhere);
+            plan.InstallCopy = true;
+            plan.RegisterTask = true;
+            plan.RestartIfStopped = true;
+            return plan;
+        }
+
+        internal static bool Unchanged(AutostartState expected, AutostartState actual)
+        {
+            return expected != null && actual != null && expected.Exists == actual.Exists
+                && String.Equals(expected.Registration, actual.Registration, StringComparison.Ordinal)
+                && String.Equals(expected.Executable, actual.Executable, StringComparison.OrdinalIgnoreCase);
+        }
+
+        internal static AutostartStatus Describe(AutostartState task, bool foreign, string taskName)
+        {
+            AutostartStatus status = new AutostartStatus();
+            status.Switch = task.ThisCopy && task.Enabled ? AutostartSwitch.On : AutostartSwitch.Off;
+            // Not this program's startup: show it as off, leave the task alone
+            // and say where to delete it.
+            if (foreign)
+                status.Notice = ForeignTaskNotice + taskName;
+            else if (task.ThisCopy && !String.IsNullOrEmpty(task.RepairReason))
+                status.Notice = task.RepairReason;
+            status.Tooltip = task.Exists && !task.ThisCopy
+                ? Strings.Format("当前自启指向：{0}；勾选可确认更换。", task.Executable)
+                : Strings.Get("以当前 Windows 用户登录后，从仅管理员可写的受保护副本以管理员权限运行并留在托盘。移动程序后需重新启用。");
+            return status;
+        }
+
+        internal static AutostartStatus ReadFailed(string reason)
+        {
+            AutostartStatus status = new AutostartStatus();
+            status.Switch = AutostartSwitch.Unknown;
+            status.Notice = "自启状态读取失败：" + reason;
+            return status;
+        }
+
+        // Diagnostic source string for the result of the in-app switch.
+        internal static string Outcome(bool enabled, AutostartRemoval removal)
+        {
+            if (enabled)
+                return "已启用开机自启：登录后以管理员权限运行受保护副本，在托盘显示。";
+            return removal == AutostartRemoval.CopyNeedsElevation
+                ? "已关闭此程序的开机自启；受保护副本将在下次以管理员身份启动时删除。"
+                : "已关闭此程序的开机自启。";
+        }
+
+        private static AutostartPlan Refuse(AutostartPlan plan, string reason)
+        {
+            plan.Refusal = reason;
+            return plan;
+        }
+    }
+
     // Use the Windows-provided Task Scheduler COM API. No service, password,
     // external executable, or third-party scheduler library is needed.
     internal sealed class AutostartManager : IDisposable
@@ -71,6 +252,7 @@ namespace BatteryChargeMeter
         private readonly ProtectedCopy copy;
         private readonly string sid;
         private readonly string taskName;
+        private readonly bool elevated;
         private object service;
         private object folder;
 
@@ -81,6 +263,7 @@ namespace BatteryChargeMeter
             copy = new ProtectedCopy(protectedRoot, userSid);
             sid = userSid;
             taskName = name;
+            elevated = Startup.IsElevated();
             try
             {
                 service = Activator.CreateInstance(Type.GetTypeFromProgID("Schedule.Service", true));
@@ -103,9 +286,6 @@ namespace BatteryChargeMeter
         }
 
         internal string Identity { get { return identity; } }
-
-        // Name in the Task Scheduler Library root, for manual deletion hints.
-        internal string TaskName { get { return taskName; } }
 
         internal AutostartState Read()
         {
@@ -132,101 +312,56 @@ namespace BatteryChargeMeter
 
         internal void Enable(AutostartState expected)
         {
-            if (!Startup.IsElevated())
-                throw new InvalidOperationException("请先点击“重新以管理员身份启动”，再启用开机自启。");
-            Mutate(delegate { EnableCore(expected); });
-        }
-
-        private void EnableCore(AutostartState expected)
-        {
-            AutostartState before = Read();
-            RequireUnchanged(expected, before);
-            Register(copy.Install(image, identity));
-        }
-
-        // The protected copy must already hold this installation's files.
-        private void Register(int stoppedInstances)
-        {
-            object registered = null;
-            try
+            Mutate(delegate
             {
-                registered = Call(folder, "RegisterTask", taskName,
-                    BuildXml(copy.Executable, sid), 6 | 0x10, sid, null, 3,
-                    "D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GRGXSD;;;" + sid + ")");
-                // The same user's ordinary token may inspect, run and delete
-                // the task (including per-user uninstall), but cannot rewrite
-                // its elevated action. Keep full control for SYSTEM/admins and
-                // suppress Scheduler's automatic extra principal ACE. The action
-                // itself lives in an admin-only directory (ProtectedCopy).
-            }
-            finally
-            {
-                Release(registered);
-            }
-            AutostartState after = Read();
-            if (!after.ThisCopy || !after.Enabled || !after.Protected)
-                throw new InvalidOperationException("自启任务写入后的读取校验失败。");
-            if (stoppedInstances > 0)
-                RunTask();
-        }
-
-        private void RunTask()
-        {
-            object task = null;
-            try
-            {
-                task = Call(folder, "GetTask", taskName);
-                Release(Call(task, "Run", (object)null));
-            }
-            catch (Exception)
-            {
-                // The instance returns at the next sign-in.
-            }
-            finally
-            {
-                Release(task);
-            }
+                // Refuse before reading when not elevated, as the UI does.
+                Execute(AutostartPolicy.Enable(elevated, expected, elevated ? Read() : null));
+            });
         }
 
         internal static void RequireUnchanged(AutostartState expected, AutostartState actual)
         {
-            // Every protected task has the same action, so the owner recorded
-            // with the copy is part of what the user confirmed.
-            if (expected == null || expected.Exists != actual.Exists
-                || !String.Equals(expected.Registration, actual.Registration, StringComparison.Ordinal)
-                || !String.Equals(expected.Executable, actual.Executable, StringComparison.OrdinalIgnoreCase))
-                throw new InvalidOperationException("自启任务已被另一份程序修改，请重新读取并确认后再试。");
+            if (!AutostartPolicy.Unchanged(expected, actual))
+                throw new InvalidOperationException(AutostartPolicy.ChangedElsewhere);
         }
 
         // Deletes this installation's task and, when elevated, its protected
         // copy. A same-name task that fails the ownership check is left
-        // unchanged and reported, so uninstall and the in-app switch always
-        // have a way out; CopyNeedsElevation takes precedence because the
-        // elevated rerun reports the foreign task again.
+        // unchanged and reported (AutostartPolicy.Disable).
         internal AutostartRemoval Disable()
         {
             AutostartRemoval result = AutostartRemoval.Removed;
-            Mutate(delegate { result = DisableCore(); });
+            Mutate(delegate
+            {
+                AutostartPlan plan = AutostartPolicy.Disable(Gather());
+                Execute(plan);
+                result = plan.Removal;
+            });
             return result;
         }
 
-        private AutostartRemoval DisableCore()
+        // Brings the protected copy in line with this installation
+        // (AutostartPolicy.Synchronize). A protected copy never synchronizes,
+        // because its source is user-writable.
+        internal AutostartSync Synchronize(bool apply)
+        {
+            AutostartSync result = AutostartSync.Current;
+            Mutate(delegate
+            {
+                AutostartPlan plan = AutostartPolicy.Synchronize(Gather(), apply);
+                Execute(plan);
+                result = plan.Sync;
+            });
+            return result;
+        }
+
+        // The in-app switch state; a scheduler failure propagates. Reads only
+        // the task, because the window refreshes it on every activation.
+        internal AutostartStatus Describe()
         {
             bool foreign;
-            AutostartState before = ReadOwn(out foreign);
-            if (before.Exists && before.ThisCopy)
-            {
-                Call(folder, "DeleteTask", taskName, 0);
-                if (Read().ThisCopy)
-                    throw new InvalidOperationException("自启任务删除后的读取校验失败。");
-            }
-            AutostartRemoval done = foreign ? AutostartRemoval.ForeignTaskKept : AutostartRemoval.Removed;
-            if (!copy.OwnedBy(identity))
-                return done;
-            if (!Startup.IsElevated())
-                return AutostartRemoval.CopyNeedsElevation;
-            copy.Remove();
-            return done;
+            AutostartState task = ReadOwn(out foreign);
+            return AutostartPolicy.Describe(task, foreign, taskName);
         }
 
         // Like Read, but a same-name task that fails the ownership check reads
@@ -248,48 +383,77 @@ namespace BatteryChargeMeter
             }
         }
 
-        // Brings the protected copy in line with this installation: migrates a
-        // task that still runs a user-writable file, refreshes an outdated
-        // copy, and removes a copy no task uses. Without elevation it only
-        // reports what an elevated run would change. A protected copy never
-        // synchronizes, because its source is user-writable.
-        internal AutostartSync Synchronize(bool apply)
+        private AutostartFacts Gather()
         {
-            AutostartSync result = AutostartSync.Current;
-            Mutate(delegate { result = SynchronizeCore(apply); });
-            return result;
+            AutostartFacts facts = new AutostartFacts();
+            facts.Task = ReadOwn(out facts.Foreign);
+            facts.RunningFromCopy = !ProtectedCopy.SamePath(image, identity);
+            facts.CopyOwned = copy.OwnedBy(identity);
+            facts.CopyMatches = facts.Task.Exists && facts.Task.ThisCopy && facts.Task.Protected
+                && copy.Matches(image);
+            facts.Elevated = elevated;
+            return facts;
         }
 
-        private AutostartSync SynchronizeCore(bool apply)
+        private void Execute(AutostartPlan plan)
         {
-            if (!ProtectedCopy.SamePath(image, identity))
-                return AutostartSync.Current;
-            // A foreign same-name task reads as absent, so a copy this
-            // installation still owns counts as unused (OrphanCopy).
-            bool foreign;
-            AutostartState state = ReadOwn(out foreign);
-            AutostartSync needed;
-            if (state.Exists && state.ThisCopy && !state.Protected)
-                needed = AutostartSync.Unprotected;
-            else if (state.Exists && state.ThisCopy)
-                needed = copy.Matches(image) ? AutostartSync.Current : AutostartSync.StaleCopy;
-            else
-                needed = copy.OwnedBy(identity) ? AutostartSync.OrphanCopy : AutostartSync.Current;
-            if (!apply || needed == AutostartSync.Current)
-                return needed;
-            if (!Startup.IsElevated())
-                throw new InvalidOperationException("写入或删除自启副本需要管理员权限。");
-            if (needed == AutostartSync.Unprotected)
-                Register(copy.Install(image, identity));
-            else if (state.Exists && state.ThisCopy)
+            if (plan.Refusal != null)
+                throw new InvalidOperationException(plan.Refusal);
+            if (plan.DeleteTask)
             {
-                int stopped = copy.Install(image, identity);
-                if (stopped > 0 && state.Enabled)
-                    RunTask();
+                Call(folder, "DeleteTask", taskName, 0);
+                if (Read().ThisCopy)
+                    throw new InvalidOperationException("自启任务删除后的读取校验失败。");
             }
-            else
+            int stopped = plan.InstallCopy ? copy.Install(image, identity) : 0;
+            if (plan.RegisterTask)
+                Register();
+            if (plan.RestartIfStopped && stopped > 0)
+                RunTask();
+            if (plan.RemoveCopy)
                 copy.Remove();
-            return AutostartSync.Current;
+        }
+
+        // The protected copy must already hold this installation's files.
+        private void Register()
+        {
+            object registered = null;
+            try
+            {
+                registered = Call(folder, "RegisterTask", taskName,
+                    BuildXml(copy.Executable, sid), 6 | 0x10, sid, null, 3,
+                    "D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GRGXSD;;;" + sid + ")");
+                // The same user's ordinary token may inspect, run and delete
+                // the task (including per-user uninstall), but cannot rewrite
+                // its elevated action. Keep full control for SYSTEM/admins and
+                // suppress Scheduler's automatic extra principal ACE. The action
+                // itself lives in an admin-only directory (ProtectedCopy).
+            }
+            finally
+            {
+                Release(registered);
+            }
+            AutostartState after = Read();
+            if (!after.ThisCopy || !after.Enabled || !after.Protected)
+                throw new InvalidOperationException("自启任务写入后的读取校验失败。");
+        }
+
+        private void RunTask()
+        {
+            object task = null;
+            try
+            {
+                task = Call(folder, "GetTask", taskName);
+                Release(Call(task, "Run", (object)null));
+            }
+            catch (Exception)
+            {
+                // The instance returns at the next sign-in.
+            }
+            finally
+            {
+                Release(task);
+            }
         }
 
         private void Mutate(Action change)
