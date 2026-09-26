@@ -54,8 +54,9 @@ On 2026-09-23, verification included:
   A DPI transition disposes the popover before replacing the fonts.
 - Real English install, Chinese upgrade, localized uninstall names, and
   upgrade replacement of the old executable with the compatibility launcher.
-  An isolated legacy logon task remains unchanged and is recognized by the new
-  executable; a different portable copy cannot claim it.
+  An isolated legacy logon task is recognized by the new executable and, since
+  2026-09-26, migrated to the protected copy; a different portable copy cannot
+  claim it. See `protected-autostart.md`.
 - The actual legacy launcher starts the new GUI hidden with `--autostart`,
   retaining the inherited token. A manual new-name launch restores that same
   process. Cleanup forwarding preserves the child exit code.

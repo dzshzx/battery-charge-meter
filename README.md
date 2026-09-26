@@ -155,6 +155,8 @@ EXE manifest 继续使用 `asInvoker`，由界面启动流程主动请求提权�
 - 便携版同样使用受保护副本；无法取得管理员权限时不能启用自启，也不会退回为直接运行
   可写位置的程序。
 
+不变量、自动测试范围与宿主验收记录见 `docs/testing/protected-autostart.md`。
+
 自启使用 Windows 任务计划程序，为当前用户注册 `BatteryChargeMeter.Logon.<SID>`，
 不保存密码；允许电池供电时启动，拔电不停止，也没有空闲、网络或运行时限条件。
 开关读取实际任务状态；任务条件被修改时会提示重新勾选修复。实现遵循 Windows 的
