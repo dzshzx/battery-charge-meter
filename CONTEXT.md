@@ -79,6 +79,16 @@ _Avoid_: accurate, exact
 A figure derived from two or more measured figures and therefore missing whatever no counter measures (Estimated System Input Power, estimated battery current). Estimated values always carry the `≈` prefix and the muted colour in the UI; an estimate is never promoted to Measured and a missing figure is never substituted by a neighbouring boundary's number.
 _Avoid_: approximate value shown as measured, Contract
 
+## Startup and Installation
+
+**Protected Copy (受保护副本)**:
+The copy of the executable that the elevated logon task runs, kept in a directory only administrators can write, so that replacing the user-writable installation cannot change what runs elevated. It is created and refreshed only by an elevated process copying its own running image.
+_Avoid_: autostart copy, cached exe
+
+**Foreign Autostart Task (外部自启任务)**:
+A scheduled task carrying this program's task name whose structure the program did not create. It is never modified or adopted; disabling autostart and uninstalling proceed without it and tell the user where to remove it by hand.
+_Avoid_: stale task, corrupted task
+
 ## Example
 
 Dev: "On AC the battery shows −5 W. Should the whole-system row just show Platform Power?"
