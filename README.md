@@ -286,6 +286,15 @@ git push origin v1.3.0
 Release 会排除本次 tag 并从远端记录重建计划；基线或目标变化时，在创建 Release 前拒绝。
 摘要只证明计划一致，不构成独立的身份审批。
 
+Release 完成后，在 Windows 交互桌面上从本仓库 checkout 复验公开产物：
+
+```powershell
+pwsh -NoProfile -File .\scripts\verify-release.ps1 -Version X.Y.Z
+```
+
+脚本下载该版本全部资产，核对 SHA-256 文件、manifest 与安装包版本、`asInvoker`、
+自检、导出通知及对应源码包，并在下载目录写出 `verification.json` 与窗口截图。
+
 远端发布 tag 不移动、不复用；若 tag 后才发现失败，修复后发布下一个 patch。
 
 发布产物只存在于 GitHub Release，不直接提交到仓库。
