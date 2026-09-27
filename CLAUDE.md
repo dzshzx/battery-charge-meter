@@ -26,7 +26,10 @@ commands are in `README.md`, and PawnIO obligations in `third_party/NOTICE.md`.
   CI and Release pass `-RequireInstaller`, so missing ISCC fails. The JSON
   report at `dist/test-report.json` marks unrun real-installer acceptance.
   Local host and UI acceptance requirements are in `docs/testing/ui-localization.md`.
-- Changes use a task branch and PR. A master merge does not publish: an
+- Changes reach master only as green candidates: from a clean task branch
+  rebased on `origin/master`, `scripts/candidate.sh` pushes `candidate/**`, and
+  `promote.yml` fast-forwards master to that SHA once its CI passes; do not
+  push master directly or open PRs. A master merge does not publish: an
   annotated `vX.Y.Z` release tag requires manifest `X.Y.Z.0` and passing CI at
   that exact SHA. Published tags are immutable; fixes use a new patch version.
 - `dist/` is generated; binaries belong in GitHub Releases.
