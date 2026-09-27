@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - master
+      - "candidate/**"
   pull_request:
     branches:
       - master
