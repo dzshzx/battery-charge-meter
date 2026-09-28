@@ -32,7 +32,7 @@ commands are in `README.md`, and PawnIO obligations in `third_party/NOTICE.md`.
   push master directly or open PRs. A master merge does not publish: an
   annotated `vX.Y.Z` release tag requires manifest `X.Y.Z.0` and passing CI at
   that exact SHA. Published tags are immutable; fixes use a new patch version.
-- The agent picks the release level without asking, per the README release
+- The agent picks the release level per the README release
   section: patch by default, minor only for a user-visible new capability,
   major (including 0.x to 1.0) only when the user asks.
 - `dist/` is generated; binaries belong in GitHub Releases.

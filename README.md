@@ -264,7 +264,7 @@ python scripts/version_plan.py plan `
   --target v=X.Y.Z
 ```
 
-计划只读输出“基线到目标”。版本档位由 agent 按以下标准自定，无需另行确认：
+计划只读输出“基线到目标”。版本档位由 agent 按以下标准自定：
 
 - 默认 patch。
 - 有用户能感知的新能力才升 minor。
