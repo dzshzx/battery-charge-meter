@@ -264,11 +264,15 @@ python scripts/version_plan.py plan `
   --target v=X.Y.Z
 ```
 
-版本精确递增一个 patch 可沿用已有发布授权；minor、major 或跳号 patch 必须暂停，等用户
-明确确认输出的完整“基线到目标”计划。基线未知和降级会直接拒绝。候选经 `scripts/candidate.sh` 快进进入 `master`
-（即该同一 SHA 的 Windows CI 已全绿）后，再确认远端 tag 未占用并创建匹配的带注解 tag。
-以下以 `v1.2.1` 为示例基线，按获准计划选择对应的一组命令。
-精确递增 patch 到 `v1.2.2` 时，manifest 为 `1.2.2.0`：
+计划只读输出“基线到目标”。版本档位由 agent 按以下标准自定，无需另行确认：
+
+- 默认 patch。
+- 有用户能感知的新能力才升 minor。
+- major（含 0.x→1.0）只在用户点名时才升。内部重构、目录搬迁、删兼容层不算破坏性变更。
+
+基线未知和降级会直接拒绝；已发布的 tag 不能复用。候选经 `scripts/candidate.sh`
+快进进入 `master`（即该同一 SHA 的 Windows CI 已全绿）后，再创建匹配的带注解 tag。
+例如从 `v1.2.1` 升到 `v1.2.2` 时，manifest 为 `1.2.2.0`：
 
 ```powershell
 # 等待 master 上这个 SHA 的 CI 成功
@@ -276,17 +280,8 @@ git tag -a v1.2.2 -m "Release v1.2.2"
 git push origin v1.2.2
 ```
 
-已经明确确认的 minor、major 或跳号 patch 计划使用带摘要的 tag 命令。
-例如获准从 `v1.2.1` 升到 `v1.3.0` 时，manifest 为 `1.3.0.0`：
-
-```powershell
-git tag -a v1.3.0 -m "Release v1.3.0" `
-  -m "Version-Approval: sha256:<version_plan.py 输出的摘要>"
-git push origin v1.3.0
-```
-
-Release 会排除本次 tag 并从远端记录重建计划；基线或目标变化时，在创建 Release 前拒绝。
-摘要只证明计划一致，不构成独立的身份审批。
+Release 会排除本次 tag 并从远端记录重建计划，基线未知或降级时在创建 Release 前拒绝；
+旧 tag 上的 `Version-Approval` trailer 会被忽略。
 
 Release 完成后，在 Windows 交互桌面上从本仓库 checkout 复验公开产物：
 

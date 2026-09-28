@@ -62,7 +62,7 @@ On 2026-09-23, verification included:
   process. Cleanup forwarding preserves the child exit code.
 - Real uninstall cancellation, cleanup failure and successful removal. The
   tests use unique installer/task identities and temporary directories.
-- All 14 Python version-authorization tests.
+- All 11 Python version-plan tests.
 
 `scripts/test-ui.ps1` also runs separately and saves PNGs plus layout metadata
 under `dist/ui-preview/`. These use deterministic fixture measurements, not

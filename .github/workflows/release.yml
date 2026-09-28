@@ -50,7 +50,7 @@ jobs:
             --target "v=$version" `
             --tag-ref "refs/tags/$tag"
           if ($LASTEXITCODE -ne 0) {
-              throw "Release tag $tag failed version authorization validation."
+              throw "Release tag $tag failed version plan validation."
           }
 
           $tagRef = "refs/tags/$tag"
