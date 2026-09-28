@@ -36,3 +36,5 @@ commands are in `README.md`, and PawnIO obligations in `third_party/NOTICE.md`.
   minor (user-visible new capability) or a major (including 0.x to 1.0)
   needs the user's confirmation first.
 - `dist/` is generated; binaries belong in GitHub Releases.
+- 提交前运行 `scripts/format.sh`；门禁以 `scripts/format.sh --check` 把关
+  （ruff format、prettier、shfmt；C# 与 PowerShell 不在范围内）。

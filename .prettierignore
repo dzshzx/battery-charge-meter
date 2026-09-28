@@ -1,0 +1,5 @@
+# prettier 只经 scripts/format.sh 处理；以下文件字节必须保持不变。
+# third_party/：上游许可证与通知，含哈希钉住的文件，NOTICE.md 按字节嵌入 EXE 并与发布件比对。
+third_party/
+*.lock
+dist/

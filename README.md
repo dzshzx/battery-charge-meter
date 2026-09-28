@@ -242,6 +242,14 @@ EXE manifest 继续使用 `asInvoker`，由界面启动流程主动请求提权�
 生成多尺寸 `src/BatteryChargeMeter.ico`；修改 SVG 后重跑并连同 ICO 一起提交。
 `dist/` 是本地构建目录，不纳入版本控制。
 
+### 格式化
+
+`scripts/format.sh` 用 ruff format 重排 Python，用 prettier 重排 Markdown、YAML 与 JSON，
+用 shfmt 重排 Shell；`scripts/format.sh --check` 只检查。工具版本固定在脚本常量里
+（ruff 经 uvx，缺 uv 时用 pipx；prettier 经 npx；shfmt 按固定 sha256 下载）。
+C# 与 PowerShell 不在范围内。`third_party/`（上游许可证与哈希钉住的文件）、锁文件与
+`dist/` 保持原字节，不参与重排。
+
 ## 发布
 
 项目使用 GitHub Actions 构建和发布：
