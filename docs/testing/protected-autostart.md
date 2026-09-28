@@ -44,7 +44,7 @@ file would then start elevated at the next sign-in without a UAC prompt.
   the empty folders, then a reinstall whose same-name task is replaced by a
   foreign shape: uninstall completes, the task is unchanged and the copy is
   removed. It uses a unique `Program Files\Power Meter InstallerTest
-  <id>` root and task name.
+<id>` root and task name.
 - `scripts/test-autostart.ps1 -CheckOrdinaryClient` (manual, elevated
   interactive session; from an elevated but non-interactive SSH session, run
   it through a one-off scheduled task whose principal is the signed-in user's
@@ -69,16 +69,16 @@ were built from two builds of that commit (v9.9.1 and v9.9.2 test tags). Steps
 ran from an elevated session; ordinary-token steps ran at medium integrity in
 the interactive session.
 
-| Step | Observed |
-| --- | --- |
-| Install released v1.4.0 (ordinary token) and enable startup with its own code | Task ran `%LOCALAPPDATA%\Programs\Battery Charge Meter\BatteryChargeMeter.exe`, a folder where the user has full control. |
-| Upgrade to candidate build 1 | Task action and working folder moved to the protected copy; its SHA-256 matched the installed EXE; the old name became the legacy launcher. All three folders: owner Administrators, protected DACL `SYSTEM:F, Administrators:F, Users:RX`. |
-| Ordinary token | `--sync-autostart` returned 0. Replacing both user-folder EXEs succeeded. Opening the copy for write, creating a file beside it, renaming or deleting it, renaming its folder, adding an ACE and rewriting the task action were all denied. |
-| Run the real task on demand | The process ran from the protected path, elevated, with the original build 1 hash, not the replacement. |
-| Ordinary token places build 2 in the install folder | `--sync-autostart` returned 3; the copy was unchanged. |
-| Upgrade to build 2 while the logon instance ran | Copy hash became build 2; the task definition was byte-identical; the instance was stopped and restarted from the refreshed copy, elevated. |
-| Uninstall | Task, copy and `Program Files\Power Meter` removed; install folder, uninstall key and processes gone. |
-| Fresh candidate install with a legacy-shaped task, then scheduler start | The elevated new version migrated its own task to the protected copy at start. Ordinary `--remove-autostart` then returned 3 (task deleted, copy kept); elevated `--sync-autostart` removed the unused copy and folders. |
+| Step                                                                          | Observed                                                                                                                                                                                                                                    |
+| ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Install released v1.4.0 (ordinary token) and enable startup with its own code | Task ran `%LOCALAPPDATA%\Programs\Battery Charge Meter\BatteryChargeMeter.exe`, a folder where the user has full control.                                                                                                                   |
+| Upgrade to candidate build 1                                                  | Task action and working folder moved to the protected copy; its SHA-256 matched the installed EXE; the old name became the legacy launcher. All three folders: owner Administrators, protected DACL `SYSTEM:F, Administrators:F, Users:RX`. |
+| Ordinary token                                                                | `--sync-autostart` returned 0. Replacing both user-folder EXEs succeeded. Opening the copy for write, creating a file beside it, renaming or deleting it, renaming its folder, adding an ACE and rewriting the task action were all denied. |
+| Run the real task on demand                                                   | The process ran from the protected path, elevated, with the original build 1 hash, not the replacement.                                                                                                                                     |
+| Ordinary token places build 2 in the install folder                           | `--sync-autostart` returned 3; the copy was unchanged.                                                                                                                                                                                      |
+| Upgrade to build 2 while the logon instance ran                               | Copy hash became build 2; the task definition was byte-identical; the instance was stopped and restarted from the refreshed copy, elevated.                                                                                                 |
+| Uninstall                                                                     | Task, copy and `Program Files\Power Meter` removed; install folder, uninstall key and processes gone.                                                                                                                                       |
+| Fresh candidate install with a legacy-shaped task, then scheduler start       | The elevated new version migrated its own task to the protected copy at start. Ordinary `--remove-autostart` then returned 3 (task deleted, copy kept); elevated `--sync-autostart` removed the unused copy and folders.                    |
 
 Sign-out and sign-in were not performed; the scheduler's on-demand run uses
 the same principal and action as the logon trigger.

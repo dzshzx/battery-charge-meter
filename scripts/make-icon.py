@@ -9,6 +9,7 @@ Run: uv run --script scripts/make-icon.py (dependencies are declared inline
 and pinned in scripts/make-icon.py.lock)
 The SVG is the editable source; all Windows icon sizes are packed by Pillow.
 """
+
 import io
 from pathlib import Path
 import tempfile
@@ -21,8 +22,11 @@ SIZES = (16, 20, 24, 32, 40, 48, 64, 128, 256)
 
 
 def main():
-    png = cairosvg.svg2png(url=str(ROOT / "src/BatteryChargeMeter.svg"),
-                          output_width=1024, output_height=1024)
+    png = cairosvg.svg2png(
+        url=str(ROOT / "src/BatteryChargeMeter.svg"),
+        output_width=1024,
+        output_height=1024,
+    )
     source = Image.open(io.BytesIO(png)).convert("RGBA")
     source.save(ROOT / "src/BatteryChargeMeter.ico", sizes=[(n, n) for n in SIZES])
     sheet = Image.new("RGBA", (sum(SIZES) + 16 * (len(SIZES) + 1), 288), "#f3f4f5")

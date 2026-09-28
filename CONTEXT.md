@@ -46,16 +46,16 @@ _Avoid_: System Input Power, 市电侧输入功率
 The battery driver's answer to "where is power coming from right now", resolved from the power-online / charging / discharging flags into exactly one of eight states (`BatterySupplyState`). The state, not the raw flags, decides which formula the app applies and which caption it shows.
 _Avoid_: charging flag, AC status, battery mode
 
-| State | Caption | Meaning | Whole-system row |
-| --- | --- | --- | --- |
-| External Power Idle | `AC / IDLE` | External power, battery neither charging nor discharging | Estimated System Input Power = Platform Power + 0 |
-| External Power Charging | `CHARGING` | External power, battery charging (positive terminal power) | Estimated System Input Power = Platform Power + charge power |
-| External Power Supplemented | `DISCHARGING` | External power, battery also feeding the system (negative terminal power) | Estimated System Input Power = Platform Power − supplementation; never clamped to zero |
-| External Power Direction Unknown | `AC / UNKNOWN` | External power, firmware reports no battery direction | Estimated System Input Power with the battery term unavailable |
-| Battery Discharging | `DISCHARGING` | No external power, battery discharging | System Load Power = Battery Discharge Power (measured) |
-| Battery Direction Unknown | `ON BATTERY` | No external power, firmware reports no rate | System Load Power unavailable with reason |
-| Unavailable | `BATTERY UNAVAILABLE` | No battery status at all | Unavailable with reason |
-| Inconsistent | `BATTERY STATE INVALID` | Contradictory flags (charging and discharging, or charging without external power) | Unavailable with reason; never guessed |
+| State                            | Caption                 | Meaning                                                                            | Whole-system row                                                                       |
+| -------------------------------- | ----------------------- | ---------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| External Power Idle              | `AC / IDLE`             | External power, battery neither charging nor discharging                           | Estimated System Input Power = Platform Power + 0                                      |
+| External Power Charging          | `CHARGING`              | External power, battery charging (positive terminal power)                         | Estimated System Input Power = Platform Power + charge power                           |
+| External Power Supplemented      | `DISCHARGING`           | External power, battery also feeding the system (negative terminal power)          | Estimated System Input Power = Platform Power − supplementation; never clamped to zero |
+| External Power Direction Unknown | `AC / UNKNOWN`          | External power, firmware reports no battery direction                              | Estimated System Input Power with the battery term unavailable                         |
+| Battery Discharging              | `DISCHARGING`           | No external power, battery discharging                                             | System Load Power = Battery Discharge Power (measured)                                 |
+| Battery Direction Unknown        | `ON BATTERY`            | No external power, firmware reports no rate                                        | System Load Power unavailable with reason                                              |
+| Unavailable                      | `BATTERY UNAVAILABLE`   | No battery status at all                                                           | Unavailable with reason                                                                |
+| Inconsistent                     | `BATTERY STATE INVALID` | Contradictory flags (charging and discharging, or charging without external power) | Unavailable with reason; never guessed                                                 |
 
 The captions above are the stable supply-profile diagnostic vocabulary. The
 Power Meter (功率计) interface presents localized Chinese or English captions;
