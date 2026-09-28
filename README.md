@@ -264,11 +264,11 @@ python scripts/version_plan.py plan `
   --target v=X.Y.Z
 ```
 
-计划只读输出“基线到目标”。版本档位由 agent 按以下标准自定：
+计划只读输出“基线到目标”。版本档位标准：
 
 - 默认 patch。
-- 有用户能感知的新能力才升 minor。
-- major（含 0.x→1.0）只在用户点名时才升。内部重构、目录搬迁、删兼容层不算破坏性变更。
+- minor（有用户能感知的新能力）须先经用户确认。
+- major（含 0.x→1.0）须先经用户确认。内部重构、目录搬迁、删兼容层不算破坏性变更。
 
 基线未知和降级会直接拒绝；已发布的 tag 不能复用。候选经 `scripts/candidate.sh`
 快进进入 `master`（即该同一 SHA 的 Windows CI 已全绿）后，再创建匹配的带注解 tag。
