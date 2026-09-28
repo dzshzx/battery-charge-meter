@@ -249,6 +249,9 @@ EXE manifest 继续使用 `asInvoker`，由界面启动流程主动请求提权�
 （ruff 经 uvx，缺 uv 时用 pipx；prettier 经 npx；shfmt 按固定 sha256 下载）。
 C# 与 PowerShell 不在范围内。`third_party/`（上游许可证与哈希钉住的文件）、锁文件与
 `dist/` 保持原字节，不参与重排。
+CI 的 `format` 作业在 Linux runner 上运行 `scripts/format.sh --check`，不一致即失败。
+纯格式重排提交登记在 `.git-blame-ignore-revs`，本地可用
+`git config blame.ignoreRevsFile .git-blame-ignore-revs` 让 blame 跳过它们。
 
 ## 发布
 
