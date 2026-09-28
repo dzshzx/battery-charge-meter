@@ -6,7 +6,7 @@
 中文名为“功率计”，英文名为 **Power Meter**（原 Battery Charge Meter）。
 应用与安装器支持简体中文、英文，默认按系统语言选择；窗口底部的“设置”弹层
 和托盘的“语言 / Language”菜单可以即时切换，选择保存在当前用户设置中。
-GitHub 仓库地址保留 `dzshzx/battery-charge-meter`。
+GitHub 仓库为 `dzshzx/power-meter`（2026-09-28 由 `battery-charge-meter` 改名，旧地址自动跳转）。
 
 > 功率术语、供电状态与测量类型在 `CONTEXT.md`；本页提供产品行为与发布说明，Agent 入口为 `AGENTS.md`。
 
@@ -115,7 +115,7 @@ PowerMeter.exe --power-probe report.txt 10
 
 ## 运行
 
-从 [Releases](https://github.com/dzshzx/battery-charge-meter/releases/latest) 选择一种形式：
+从 [Releases](https://github.com/dzshzx/power-meter/releases/latest) 选择一种形式：
 
 - 下载 `PowerMeter-vX.Y.Z-windows-setup.exe`，按向导安装到当前用户并从
   开始菜单启动；安装本身不需要管理员权限。
@@ -260,7 +260,7 @@ EXE manifest 继续使用 `asInvoker`，由界面启动流程主动请求提权�
 
 ```powershell
 python scripts/version_plan.py plan `
-  --repository dzshzx/battery-charge-meter `
+  --repository dzshzx/power-meter `
   --target v=X.Y.Z
 ```
 

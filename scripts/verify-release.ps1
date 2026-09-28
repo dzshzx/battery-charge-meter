@@ -2,7 +2,7 @@
 param(
     [Parameter(Mandatory)][ValidatePattern('^\d+\.\d+\.\d+$')][string]$Version,
     [string]$Directory,
-    [string]$Repository = 'dzshzx/battery-charge-meter'
+    [string]$Repository = 'dzshzx/power-meter'
 )
 
 # Downloads the public assets of release vX.Y.Z and checks them against this

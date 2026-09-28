@@ -143,7 +143,7 @@ if ($targetFrameworkName -ne '.NETFramework,Version=v4.7') {
 
 Complete-Phase 'portable-executable'
 $probeDir = Join-Path ([IO.Path]::GetTempPath()) (
-    'battery-charge-meter-test-' + [Guid]::NewGuid().ToString('N')
+    'power-meter-test-' + [Guid]::NewGuid().ToString('N')
 )
 $dpiProcess = $null
 $dpiReturnProcess = $null
@@ -333,7 +333,7 @@ finally {
 
 Complete-Phase 'release-packaging-inputs'
 $packageDir = Join-Path ([IO.Path]::GetTempPath()) (
-    'battery-charge-meter-package-test-' + [Guid]::NewGuid().ToString('N')
+    'power-meter-package-test-' + [Guid]::NewGuid().ToString('N')
 )
 
 try {

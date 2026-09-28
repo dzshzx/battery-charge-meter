@@ -46,7 +46,7 @@ jobs:
           }
 
           & python scripts/version_plan.py verify `
-            --repository dzshzx/battery-charge-meter `
+            --repository dzshzx/power-meter `
             --target "v=$version" `
             --tag-ref "refs/tags/$tag"
           if ($LASTEXITCODE -ne 0) {
