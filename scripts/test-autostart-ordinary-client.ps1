@@ -60,6 +60,7 @@ try {
         if (-not (Test-Path -LiteralPath $ProtectedExecutable)) { throw 'Protected copy disappeared.' }
     } else {
         $assembly = [Reflection.Assembly]::LoadFile($Executable)
+        $null = $assembly.GetType('BatteryChargeMeter.EmbeddedLibraries', $true).GetMethod('Initialize', [Reflection.BindingFlags]'Static,NonPublic').Invoke($null, @())
         $type = $assembly.GetType('BatteryChargeMeter.AutostartManager', $true)
         $flags = [Reflection.BindingFlags]'Instance,NonPublic'
         $constructor = $type.GetConstructor($flags, $null, [type[]]@([string], [string], [string], [string]), $null)

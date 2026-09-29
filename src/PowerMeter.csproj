@@ -10,10 +10,9 @@
     <Reference Include="System.Design" />
   </ItemGroup>
   <ItemGroup>
-    <!-- Compile against AntdUI but do not copy it: EmbeddedUi loads the
-         embedded copy, keeping the portable EXE self-contained. The lock file
-         pins the package content hash. -->
-    <PackageReference Include="AntdUI" Version="2.4.11" GeneratePathProperty="true" ExcludeAssets="runtime" />
+    <PackageReference Include="AntdUI" Version="2.4.11" />
+    <PackageReference Include="TaskScheduler" Version="2.12.2" />
+    <PackageReference Include="System.CommandLine" Version="2.0.12" />
   </ItemGroup>
   <ItemGroup>
     <!-- A same-named IntelMSR.bin beside the EXE takes precedence at runtime;
@@ -24,6 +23,22 @@
     <EmbeddedResource Include="..\third_party\LICENSE.Apache-2.0.txt" LogicalName="Apache-2.0.txt" />
     <EmbeddedResource Include="..\third_party\LICENSE.Lucide.txt" LogicalName="Lucide-license.txt" />
     <EmbeddedResource Include="..\third_party\LICENSE.Ms-PL.txt" LogicalName="Ms-PL.txt" />
-    <EmbeddedResource Include="$(PkgAntdUI)\lib\net46\AntdUI.dll" LogicalName="AntdUI.dll" />
+    <EmbeddedResource Include="..\third_party\LICENSE.TaskScheduler.txt" LogicalName="TaskScheduler-license.txt" />
+    <EmbeddedResource Include="..\third_party\LICENSE.dotnet-MIT.txt" LogicalName="dotnet-MIT.txt" />
   </ItemGroup>
+  <!-- Keep the portable EXE self-contained: every copy-local assembly
+       (package libraries and the .NET Standard facades that let a 4.7
+       runtime load them; satellite resource assemblies excluded) is
+       embedded as lib/<name>.dll for EmbeddedLibraries to load, and nothing
+       is written beside the EXE. Resolution falls back to these copies only
+       when the runtime lacks an assembly. The lock file pins each package's
+       content hash. -->
+  <Target Name="EmbedCopyLocalAssemblies" AfterTargets="ResolveAssemblyReferences">
+    <ItemGroup>
+      <_EmbeddedAssembly Include="@(ReferenceCopyLocalPaths)"
+        Condition="'%(Extension)' == '.dll' And '%(ReferenceCopyLocalPaths.DestinationSubDirectory)' == ''" />
+      <EmbeddedResource Include="@(_EmbeddedAssembly)" LogicalName="lib/%(Filename)%(Extension)" />
+      <ReferenceCopyLocalPaths Remove="@(ReferenceCopyLocalPaths)" />
+    </ItemGroup>
+  </Target>
 </Project>

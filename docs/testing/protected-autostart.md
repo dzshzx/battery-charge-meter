@@ -30,7 +30,7 @@ file would then start elevated at the next sign-in without a UAC prompt.
 
 ## Automated coverage
 
-- `--self-test`: task inspection with the protected path, recorded owner,
+- `tests/PowerMeter.Tests` (xUnit, run by `scripts/test.ps1`): task inspection with the protected path, recorded owner,
   unprotected-task reporting, foreign task shapes, identity mapping, CLI
   routing for `--sync-autostart`, and the full `AutostartPolicy` decision
   table (synchronize, disable and enable plans, exit codes and their

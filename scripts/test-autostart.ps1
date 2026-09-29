@@ -6,6 +6,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+Import-Module Pester -MinimumVersion 5.9.1 -MaximumVersion 5.999 -ErrorAction Stop
 # Framework reflection and COM use the same runtime as the shipping app.
 if ($PSVersionTable.PSEdition -ne 'Desktop') {
     $forward = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $PSCommandPath, '-Executable', $Executable)
@@ -42,10 +43,6 @@ $managerC = $null
 $lease = $null
 $task = $null
 
-function Assert-True([bool]$Condition, [string]$Message) {
-    if (-not $Condition) { throw $Message }
-    Write-Host "PASS $Message"
-}
 function Invoke-Internal($Target, [string]$Name, [object[]]$Arguments = @()) {
     $method = $Target.GetType().GetMethod($Name, [Reflection.BindingFlags]'Instance,Public,NonPublic')
     $plain = New-Object object[] $Arguments.Count
@@ -84,7 +81,7 @@ function Invoke-OrdinaryClient([string]$Operation, [string]$Extra = '') {
     while (-not (Test-Path -LiteralPath $report) -and [DateTime]::UtcNow -lt $deadline) { Start-Sleep -Milliseconds 200 }
     if (-not (Test-Path -LiteralPath $report)) { throw "Ordinary $Operation client did not return a report." }
     $result = Get-Content -LiteralPath $report -Raw | ConvertFrom-Json
-    Assert-True (-not $result.elevated -and $result.sid -eq $sid -and $result.success) "ordinary Explorer token $Operation succeeds: $($result.error)"
+    Should -ActualValue (-not $result.elevated -and $result.sid -eq $sid -and $result.success) -BeTrue -Because "ordinary Explorer token $Operation succeeds: $($result.error)"
     # A report precedes process exit; let the helper release its loaded assembly.
     do {
         $clients = @(Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" | Where-Object { $_.CommandLine -and $_.CommandLine.Contains($report) })
@@ -173,38 +170,39 @@ try {
     Copy-Item -LiteralPath $Executable -Destination $copyB
     Copy-Item -LiteralPath $Executable -Destination $copyC
     $assembly = [Reflection.Assembly]::LoadFile($Executable)
+    $null = $assembly.GetType('BatteryChargeMeter.EmbeddedLibraries', $true).GetMethod('Initialize', [Reflection.BindingFlags]'Static,NonPublic').Invoke($null, @())
     $managerType = $assembly.GetType('BatteryChargeMeter.AutostartManager', $true)
     $constructor = $managerType.GetConstructor([Reflection.BindingFlags]'Instance,NonPublic', $null, [type[]]@([string], [string], [string], [string]), $null)
     $managerA = $constructor.Invoke([object[]]@([string]$copyA, [string]$sid, [string]$taskName, [string]$protectedRoot))
     $managerB = $constructor.Invoke([object[]]@([string]$copyB, [string]$sid, [string]$taskName, [string]$protectedRoot))
     $managerC = $constructor.Invoke([object[]]@([string]$copyC, [string]$sid, [string]$taskName, [string]$protectedRoot))
     $absent = Invoke-Internal $managerA 'Read'
-    Assert-True (-not (Invoke-Internal $managerA 'Read').Exists) 'unique test task starts absent'
+    Should -ActualValue (-not (Invoke-Internal $managerA 'Read').Exists) -BeTrue -Because 'unique test task starts absent'
     $leaseType = $assembly.GetType('BatteryChargeMeter.GuiInstance', $true)
     $lease = [Activator]::CreateInstance($leaseType, $true)
-    Assert-True (Invoke-Internal $lease 'Acquire' @($copyA, $false)) 'real GUI instance lock can be acquired'
+    Should -ActualValue (Invoke-Internal $lease 'Acquire' @($copyA, $false)) -BeTrue -Because 'real GUI instance lock can be acquired'
     $lease.Dispose()
     $lease = $null
     if ($GuiOnly) {
         $legacy = Join-Path (Split-Path $copyA) 'BatteryChargeMeter.exe'
         Copy-Item (Join-Path $PSScriptRoot '..\dist\compat\BatteryChargeMeter.exe') $legacy
         $forwarder = Start-Process -FilePath $legacy -ArgumentList '--autostart' -PassThru
-        Assert-True ($forwarder.WaitForExit(10000) -and $forwarder.ExitCode -eq 0) 'legacy logon action starts the renamed application'
+        Should -ActualValue ($forwarder.WaitForExit(10000) -and $forwarder.ExitCode -eq 0) -BeTrue -Because 'legacy logon action starts the renamed application'
         $running = @(Wait-TestProcess 1)
         $child = Get-Process -Id $running[0].ProcessId
         Wait-HiddenWindow $child.Id
-        Assert-True (-not $child.HasExited) 'ordinary-token autostart is ready and hidden without UAC'
+        Should -ActualValue (-not $child.HasExited) -BeTrue -Because 'ordinary-token autostart is ready and hidden without UAC'
         $parentElevated = ([Security.Principal.WindowsPrincipal]$identity).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-        Assert-True ([BcmAutostartWindowProbe]::Elevated($child.Id) -eq $parentElevated) 'autostart preserves inherited token without implicit UAC'
+        Should -ActualValue ([BcmAutostartWindowProbe]::Elevated($child.Id) -eq $parentElevated) -BeTrue -Because 'autostart preserves inherited token without implicit UAC'
         $duplicate = Start-Process -FilePath $copyA -ArgumentList '--autostart' -PassThru
-        Assert-True ($duplicate.WaitForExit(10000) -and $duplicate.ExitCode -eq 0) 'ordinary duplicate autostart exits cleanly'
+        Should -ActualValue ($duplicate.WaitForExit(10000) -and $duplicate.ExitCode -eq 0) -BeTrue -Because 'ordinary duplicate autostart exits cleanly'
         Wait-HiddenWindow $child.Id
         $duplicate = Start-Process -FilePath $copyA -PassThru
-        Assert-True ($duplicate.WaitForExit(10000) -and $duplicate.ExitCode -eq 0) 'ordinary manual launch does not duplicate hidden GUI'
+        Should -ActualValue ($duplicate.WaitForExit(10000) -and $duplicate.ExitCode -eq 0) -BeTrue -Because 'ordinary manual launch does not duplicate hidden GUI'
         Wait-VisibleWindow $child.Id
-        Assert-True ($true) 'manual launch restores the actual existing hidden window without UAC'
-        Assert-True (@(Get-TestProcesses).Count -eq 1) 'exactly one isolated GUI remains'
-        Assert-True (-not (Invoke-Internal $managerA 'Read').Exists) 'GUI-only test never registers a task'
+        Should -ActualValue ($true) -BeTrue -Because 'manual launch restores the actual existing hidden window without UAC'
+        Should -ActualValue (@(Get-TestProcesses).Count -eq 1) -BeTrue -Because 'exactly one isolated GUI remains'
+        Should -ActualValue (-not (Invoke-Internal $managerA 'Read').Exists) -BeTrue -Because 'GUI-only test never registers a task'
         Write-Host 'Autostart GUI-only integration passed.'
         return
     }
@@ -212,37 +210,37 @@ try {
     $legacyXml = $managerType.GetMethod('BuildXml', [Reflection.BindingFlags]'Static,NonPublic').Invoke($null, [object[]]@([string]$copyA, [string]$sid))
     $folder.RegisterTask($taskName, $legacyXml, 6, $sid, $null, 3, $null) | Out-Null
     $legacy = Invoke-Internal $managerA 'Read'
-    Assert-True ($legacy.ThisCopy -and -not $legacy.Protected -and -not $legacy.Enabled -and $legacy.RepairReason) 'task running the user-writable file is reported as needing migration'
-    Assert-True ([int](Invoke-Internal $managerA 'Synchronize' @($false)) -eq 4) 'report-only synchronization flags the unprotected task'
-    Assert-True ([int](Invoke-Internal $managerA 'Synchronize' @($true)) -eq 0 -and (Get-TaskCommand) -eq $protectedExe) 'elevated synchronization migrates the task to the protected copy'
+    Should -ActualValue ($legacy.ThisCopy -and -not $legacy.Protected -and -not $legacy.Enabled -and $legacy.RepairReason) -BeTrue -Because 'task running the user-writable file is reported as needing migration'
+    Should -ActualValue ([int](Invoke-Internal $managerA 'Synchronize' @($false)) -eq 4) -BeTrue -Because 'report-only synchronization flags the unprotected task'
+    Should -ActualValue ([int](Invoke-Internal $managerA 'Synchronize' @($true)) -eq 0 -and (Get-TaskCommand) -eq $protectedExe) -BeTrue -Because 'elevated synchronization migrates the task to the protected copy'
     Invoke-Internal $managerA 'Disable' | Out-Null
-    Assert-True (-not (Invoke-Internal $managerA 'Read').Exists -and -not (Test-Path -LiteralPath $protectedExe)) 'elevated disable removes task and protected copy'
+    Should -ActualValue (-not (Invoke-Internal $managerA 'Read').Exists -and -not (Test-Path -LiteralPath $protectedExe)) -BeTrue -Because 'elevated disable removes task and protected copy'
 
     Enable-Current $managerA
     $state = Invoke-Internal $managerA 'Read'
-    Assert-True ($state.Enabled -and $state.ThisCopy -and $state.Protected -and $state.Executable -eq $copyA) 'register and read back exact elevated logon task'
-    Assert-True ((Get-TaskCommand) -eq $protectedExe -and (Get-Sha256 $protectedExe) -eq (Get-Sha256 $copyA)) 'task runs a byte-identical copy in the admin-only directory'
+    Should -ActualValue ($state.Enabled -and $state.ThisCopy -and $state.Protected -and $state.Executable -eq $copyA) -BeTrue -Because 'register and read back exact elevated logon task'
+    Should -ActualValue ((Get-TaskCommand) -eq $protectedExe -and (Get-Sha256 $protectedExe) -eq (Get-Sha256 $copyA)) -BeTrue -Because 'task runs a byte-identical copy in the admin-only directory'
     Enable-Current $managerA
-    Assert-True ((Invoke-Internal $managerA 'Read').Enabled) 'idempotent update reads back enabled'
+    Should -ActualValue ((Invoke-Internal $managerA 'Read').Enabled) -BeTrue -Because 'idempotent update reads back enabled'
     $task = $folder.GetTask($taskName)
     [xml]$xml = $task.Xml
-    Assert-True ($xml.Task.Principals.Principal.RunLevel -eq 'HighestAvailable' -and $xml.Task.Principals.Principal.LogonType -eq 'InteractiveToken' -and $xml.Task.Principals.Principal.UserId -eq $sid) 'explicit user SID, highest token, no stored password'
+    Should -ActualValue ($xml.Task.Principals.Principal.RunLevel -eq 'HighestAvailable' -and $xml.Task.Principals.Principal.LogonType -eq 'InteractiveToken' -and $xml.Task.Principals.Principal.UserId -eq $sid) -BeTrue -Because 'explicit user SID, highest token, no stored password'
     $settings = $task.Definition.Settings
-    Assert-True (-not $settings.DisallowStartIfOnBatteries -and -not $settings.StopIfGoingOnBatteries -and -not $settings.RunOnlyIfIdle -and -not $settings.RunOnlyIfNetworkAvailable -and $settings.ExecutionTimeLimit -eq 'PT0S') 'battery, idle, network and execution-limit settings'
-    Assert-True ($xml.Task.Settings.MultipleInstancesPolicy -eq 'IgnoreNew') 'scheduler prevents duplicate scheduled instances'
+    Should -ActualValue (-not $settings.DisallowStartIfOnBatteries -and -not $settings.StopIfGoingOnBatteries -and -not $settings.RunOnlyIfIdle -and -not $settings.RunOnlyIfNetworkAvailable -and $settings.ExecutionTimeLimit -eq 'PT0S') -BeTrue -Because 'battery, idle, network and execution-limit settings'
+    Should -ActualValue ($xml.Task.Settings.MultipleInstancesPolicy -eq 'IgnoreNew') -BeTrue -Because 'scheduler prevents duplicate scheduled instances'
     $replacementRejected = $false
     try { Invoke-Internal $managerB 'Enable' @($absent) } catch { $replacementRejected = $true }
-    Assert-True ($replacementRejected -and (Invoke-Internal $managerA 'Read').ThisCopy) 'another copy cannot silently repoint the task'
+    Should -ActualValue ($replacementRejected -and (Invoke-Internal $managerA 'Read').ThisCopy) -BeTrue -Because 'another copy cannot silently repoint the task'
     $confirmedA = Invoke-Internal $managerB 'Read'
     Enable-Current $managerC
     $staleRejected = $false
     try { Invoke-Internal $managerB 'Enable' @($confirmedA) } catch { $staleRejected = $true }
-    Assert-True ($staleRejected -and (Invoke-Internal $managerC 'Read').ThisCopy) 'stale A-to-B confirmation cannot overwrite concurrent copy C'
+    Should -ActualValue ($staleRejected -and (Invoke-Internal $managerC 'Read').ThisCopy) -BeTrue -Because 'stale A-to-B confirmation cannot overwrite concurrent copy C'
     Enable-Current $managerB
     Invoke-Internal $managerA 'Disable' | Out-Null
-    Assert-True ((Invoke-Internal $managerB 'Read').ThisCopy -and (Test-Path -LiteralPath $protectedExe)) 'old installation cleanup preserves another copy task and its protected copy'
+    Should -ActualValue ((Invoke-Internal $managerB 'Read').ThisCopy -and (Test-Path -LiteralPath $protectedExe)) -BeTrue -Because 'old installation cleanup preserves another copy task and its protected copy'
     Invoke-Internal $managerB 'Disable' | Out-Null
-    Assert-True (-not (Invoke-Internal $managerB 'Read').Exists -and -not (Test-Path -LiteralPath $protectedExe)) 'own task and protected copy deletion reads back absent'
+    Should -ActualValue (-not (Invoke-Internal $managerB 'Read').Exists -and -not (Test-Path -LiteralPath $protectedExe)) -BeTrue -Because 'own task and protected copy deletion reads back absent'
 
     # A same-name task in a shape this program never registers is left alone:
     # reading reports it, enabling refuses, and disabling still removes this
@@ -257,14 +255,14 @@ try {
         while ($cause.InnerException) { $cause = $cause.InnerException }
         $foreignType = $cause.GetType().Name
     }
-    Assert-True ($foreignType -eq 'ForeignAutostartTaskException') 'foreign same-name task is reported as not this program''s'
+    Should -ActualValue ($foreignType -eq 'ForeignAutostartTaskException') -BeTrue -Because 'foreign same-name task is reported as not this program''s'
     $enableRejected = $false
     try { Invoke-Internal $managerA 'Enable' @($absent) } catch { $enableRejected = $true }
-    Assert-True ($enableRejected -and $folder.GetTask($taskName).Xml -eq $foreignXml) 'enabling never overwrites a foreign same-name task'
-    Assert-True ([int](Invoke-Internal $managerA 'Synchronize' @($false)) -eq 5) 'report-only synchronization treats the owned copy as unused beside a foreign task'
-    Assert-True ([int](Invoke-Internal $managerA 'Disable') -eq 6) 'disable reports the kept foreign task with exit code 6'
-    Assert-True ($folder.GetTask($taskName).Xml -eq $foreignXml -and -not (Test-Path -LiteralPath $protectedExe)) 'disable leaves the foreign task unchanged and removes the protected copy'
-    Assert-True ([int](Invoke-Internal $managerA 'Disable') -eq 6) 'repeated disable stays finishable'
+    Should -ActualValue ($enableRejected -and $folder.GetTask($taskName).Xml -eq $foreignXml) -BeTrue -Because 'enabling never overwrites a foreign same-name task'
+    Should -ActualValue ([int](Invoke-Internal $managerA 'Synchronize' @($false)) -eq 5) -BeTrue -Because 'report-only synchronization treats the owned copy as unused beside a foreign task'
+    Should -ActualValue ([int](Invoke-Internal $managerA 'Disable') -eq 6) -BeTrue -Because 'disable reports the kept foreign task with exit code 6'
+    Should -ActualValue ($folder.GetTask($taskName).Xml -eq $foreignXml -and -not (Test-Path -LiteralPath $protectedExe)) -BeTrue -Because 'disable leaves the foreign task unchanged and removes the protected copy'
+    Should -ActualValue ([int](Invoke-Internal $managerA 'Disable') -eq 6) -BeTrue -Because 'repeated disable stays finishable'
     $folder.DeleteTask($taskName, 0)
 
     Enable-Current $managerA
@@ -272,9 +270,9 @@ try {
     $changedXml = $task.Xml.Replace('<DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>', '<DisallowStartIfOnBatteries>true</DisallowStartIfOnBatteries>')
     $folder.RegisterTask($taskName, $changedXml, 6, $sid, $null, 3, $null) | Out-Null
     $drifted = Invoke-Internal $managerA 'Read'
-    Assert-True (-not $drifted.Enabled -and $drifted.RepairReason) 'real task policy drift is reported as needing repair'
+    Should -ActualValue (-not $drifted.Enabled -and $drifted.RepairReason) -BeTrue -Because 'real task policy drift is reported as needing repair'
     Enable-Current $managerA
-    Assert-True ((Invoke-Internal $managerA 'Read').Enabled) 're-enable repairs drift and reads back enabled'
+    Should -ActualValue ((Invoke-Internal $managerA 'Read').Enabled) -BeTrue -Because 're-enable repairs drift and reads back enabled'
     $task = $folder.GetTask($taskName)
 
     # Replace the user-writable executable, as any ordinary process can. The
@@ -288,63 +286,63 @@ try {
     } else {
         Copy-Replacing $replacement $copyA
     }
-    Assert-True ((Get-Sha256 $copyA) -eq (Get-Sha256 $replacement)) 'user-writable executable was replaced'
+    Should -ActualValue ((Get-Sha256 $copyA) -eq (Get-Sha256 $replacement)) -BeTrue -Because 'user-writable executable was replaced'
     $task.Run($null) | Out-Null
     $running = @(Wait-TestProcess 1)
     Wait-HiddenWindow $running[0].ProcessId
-    Assert-True ($running[0].ExecutablePath -eq $protectedExe -and (Get-Sha256 $protectedExe) -eq $originalHash) 'scheduler still runs the original protected copy after replacement'
-    Assert-True ([BcmAutostartWindowProbe]::Elevated($running[0].ProcessId)) 'scheduler actually launched an elevated token'
+    Should -ActualValue ($running[0].ExecutablePath -eq $protectedExe -and (Get-Sha256 $protectedExe) -eq $originalHash) -BeTrue -Because 'scheduler still runs the original protected copy after replacement'
+    Should -ActualValue ([BcmAutostartWindowProbe]::Elevated($running[0].ProcessId)) -BeTrue -Because 'scheduler actually launched an elevated token'
     $task.Stop(0)
     Wait-TestProcess 0 | Out-Null
     Copy-Replacing $backupA $copyA
     $task.Run($null) | Out-Null
     $running = @(Wait-TestProcess 1)
     Wait-HiddenWindow $running[0].ProcessId
-    Assert-True ($running[0].CommandLine -match '--autostart') 'actual scheduler action starts hidden tray GUI'
+    Should -ActualValue ($running[0].CommandLine -match '--autostart') -BeTrue -Because 'actual scheduler action starts hidden tray GUI'
     $task.Run($null) | Out-Null
     Start-Sleep -Milliseconds 500
-    Assert-True (@(Get-TestProcesses).Count -eq 1) 'second scheduler Run does not duplicate GUI'
+    Should -ActualValue (@(Get-TestProcesses).Count -eq 1) -BeTrue -Because 'second scheduler Run does not duplicate GUI'
     $duplicate = Start-Process -FilePath $copyA -ArgumentList '--autostart' -PassThru
-    Assert-True ($duplicate.WaitForExit(10000) -and $duplicate.ExitCode -eq 0) 'duplicate autostart exits cleanly'
+    Should -ActualValue ($duplicate.WaitForExit(10000) -and $duplicate.ExitCode -eq 0) -BeTrue -Because 'duplicate autostart exits cleanly'
     Wait-HiddenWindow $running[0].ProcessId
     if ($CheckOrdinaryClient) {
         Invoke-OrdinaryClient 'Restore'
         Wait-VisibleWindow $running[0].ProcessId
-        Assert-True (@(Get-TestProcesses).Count -eq 1) 'ordinary launch restores elevated window without duplication'
+        Should -ActualValue (@(Get-TestProcesses).Count -eq 1) -BeTrue -Because 'ordinary launch restores elevated window without duplication'
     }
     $duplicate = Start-Process -FilePath $copyA -ArgumentList '--no-elevate' -PassThru
-    Assert-True ($duplicate.WaitForExit(10000) -and $duplicate.ExitCode -eq 0) 'manual launch preserves existing scheduled instance'
+    Should -ActualValue ($duplicate.WaitForExit(10000) -and $duplicate.ExitCode -eq 0) -BeTrue -Because 'manual launch preserves existing scheduled instance'
     Wait-VisibleWindow $running[0].ProcessId
-    Assert-True ($true) 'manual launch restores actual scheduled window'
+    Should -ActualValue ($true) -BeTrue -Because 'manual launch restores actual scheduled window'
     $task.Stop(0)
     Wait-TestProcess 0 | Out-Null
 
     # Simulate the old GUI holding the same real mutex during a runas handoff.
     $leaseType = $assembly.GetType('BatteryChargeMeter.GuiInstance', $true)
     $lease = [Activator]::CreateInstance($leaseType, $true)
-    Assert-True (Invoke-Internal $lease 'Acquire' @($copyA, $false)) 'parent owns real handoff lock'
+    Should -ActualValue (Invoke-Internal $lease 'Acquire' @($copyA, $false)) -BeTrue -Because 'parent owns real handoff lock'
     $child = Start-Process -FilePath $copyA -ArgumentList '--elevation-attempted' -PassThru
     Start-Sleep -Milliseconds 500
-    Assert-True (-not $child.HasExited) 'elevated handoff child waits for old GUI'
+    Should -ActualValue (-not $child.HasExited) -BeTrue -Because 'elevated handoff child waits for old GUI'
     $lease.Dispose()
     $lease = $null
     Start-Sleep -Seconds 2
     $child.Refresh()
-    Assert-True (-not $child.HasExited) 'handoff child survives parent release'
+    Should -ActualValue (-not $child.HasExited) -BeTrue -Because 'handoff child survives parent release'
     $task.Run($null) | Out-Null
     Start-Sleep -Seconds 2
-    Assert-True (@(Get-TestProcesses).Count -eq 1) 'scheduled start does not duplicate a manually launched GUI'
+    Should -ActualValue (@(Get-TestProcesses).Count -eq 1) -BeTrue -Because 'scheduled start does not duplicate a manually launched GUI'
     Stop-Process -Id $child.Id -Force
     Wait-TestProcess 0 | Out-Null
     if ($CheckOrdinaryClient) {
         Invoke-OrdinaryClient 'Disable'
-        Assert-True (Test-Path -LiteralPath $protectedExe) 'ordinary-token disable leaves the admin-only copy'
-        Assert-True ([int](Invoke-Internal $managerA 'Synchronize' @($false)) -eq 5) 'report-only synchronization flags the unused copy'
+        Should -ActualValue (Test-Path -LiteralPath $protectedExe) -BeTrue -Because 'ordinary-token disable leaves the admin-only copy'
+        Should -ActualValue ([int](Invoke-Internal $managerA 'Synchronize' @($false)) -eq 5) -BeTrue -Because 'report-only synchronization flags the unused copy'
         Invoke-Internal $managerA 'Synchronize' @($true) | Out-Null
     } else {
         Invoke-Internal $managerA 'Disable' | Out-Null
     }
-    Assert-True (-not (Invoke-Internal $managerA 'Read').Exists -and -not (Test-Path -LiteralPath $protectedParent)) 'final removal reads back absent task, copy and empty folders'
+    Should -ActualValue (-not (Invoke-Internal $managerA 'Read').Exists -and -not (Test-Path -LiteralPath $protectedParent)) -BeTrue -Because 'final removal reads back absent task, copy and empty folders'
     Write-Host 'Autostart integration passed. Only the unique test task and temporary copies were touched.'
 }
 finally {

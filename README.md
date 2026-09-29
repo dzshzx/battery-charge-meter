@@ -82,7 +82,7 @@ PowerMeter.exe --power-probe report.txt 10
 | `--remove-autostart`                                      | 删除本程序的自启任务及受保护副本，供卸载器使用；不打开窗口或请求提权。失败退出码为 `1`；任务已删、副本需管理员权限删除时为 `3`；同名任务不属于本程序、已原样保留时为 `6`（本程序的自启与副本照常清理） |
 | `--sync-autostart`                                        | 供安装器升级时调用：已提权时迁移或刷新受保护副本（成功为 `0`），普通权限只报告需要做什么：`3` 副本过期，`4` 任务仍指向可被普通权限替换的文件，`5` 副本已无任务使用；失败为 `1`                         |
 | `--power-probe <report.txt> [秒数=5]`                     | 逐源探测并写出各口径的采样报告                                                                                                                                                                         |
-| `--self-test <report.txt>`                                | 跑功率推导自检（供电状态 × 固件速率组合），通过退出码 0、失败 1；CI 与 `scripts/test.ps1` 依赖它                                                                                                       |
+| `--self-test <report.txt>`                                | 发布物冒烟自检（内嵌库加载、窗口与托盘绑定），通过退出码 0、失败 1；规则单测在 `tests/PowerMeter.Tests`，CI 与 `scripts/test.ps1` 都会跑                                                               |
 | `--third-party-notices <out.txt>`                         | 导出内嵌的第三方通知全文                                                                                                                                                                               |
 | `--screenshot <out.png>`                                  | 渲染主窗口截图                                                                                                                                                                                         |
 | `--dpi-preview <out.png> <目标 DPI> [返回 DPI]`           | 渲染跨 DPI 切换预览（`scripts/test.ps1` 使用）                                                                                                                                                         |
@@ -220,6 +220,10 @@ EXE manifest 继续使用 `asInvoker`，由界面启动流程主动请求提权�
 ```
 
 从 Windows 本地路径运行 `pwsh -NoProfile -File .\scripts\test.ps1` 进行自动验证。
+它先构建并运行 xUnit 单元测试（`tests/PowerMeter.Tests`，.NET Framework 4.7.2），集成脚本的断言用
+Pester 5（需装在 Windows PowerShell 与 PowerShell 7 都能加载的
+`%ProgramFiles%\WindowsPowerShell\Modules`，例如
+`Save-PSResource -Name Pester -Version 5.9.1 -TrustRepository -Path "$env:ProgramFiles\WindowsPowerShell\Modules"`）。
 若没有 Inno Setup，脚本继续检查便携版与打包输入，并在 `dist/test-report.json`
 明确记录真实安装包安装/卸载验收未执行；该验收会在 Program Files 下写入并删除隔离的
 受保护副本，因此还需要已提权的终端，普通权限运行同样记为未执行。CI 与 Release 使用
@@ -231,8 +235,8 @@ EXE manifest 继续使用 `asInvoker`，由界面启动流程主动请求提权�
 `src/PowerMeter.csproj`（SDK 风格项目，目标 .NET Framework 4.7，引用程序集来自 NuGet），
 将应用 EXE 写入 `dist/`。依赖由 NuGet 按 `packages.lock.json` 锁定还原并校验内容哈希；
 升级依赖时改 csproj 后运行 `dotnet restore --force-evaluate` 刷新锁文件。
-AntdUI 2.4.11 的 net46 程序集内嵌在 EXE 中，运行时无需旁置 UI DLL
-或安装额外 UI 运行时。控件与 SVG 渲染许可一并内嵌并随发布通知分发。
+AntdUI 2.4.11、TaskScheduler 2.12.2（登录自启任务）、System.CommandLine 2.0.12（命令行解析）
+及其依赖程序集都内嵌在 EXE 中，运行时无需旁置 DLL 或安装额外运行时。各库许可一并内嵌并随发布通知分发。
 主程序为 `PowerMeter.exe`。`dist/compat/BatteryChargeMeter.exe` 仅用于安装升级：
 覆盖旧版时保留一个转发入口，已有快捷方式继续启动 Power Meter。旧版自启任务运行的
 正是这个可写位置的文件，安装器会把它迁移到受保护副本（或在未获管理员授权时删除），

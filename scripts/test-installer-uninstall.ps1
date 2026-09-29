@@ -5,6 +5,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+Import-Module Pester -MinimumVersion 5.9.1 -MaximumVersion 5.999 -ErrorAction Stop
 if ($PSVersionTable.PSEdition -ne 'Desktop') {
     & "$env:WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File $PSCommandPath -InstallerCompilerPath $InstallerCompilerPath -ExecutablePath $ExecutablePath
     if ($LASTEXITCODE -ne 0) { throw "Installer lifecycle test failed: $LASTEXITCODE" }
@@ -46,10 +47,6 @@ $installed = $false
 $activeUninstaller = $null
 $uninstallProcessIds = @()
 
-function Assert-Installer([bool]$Condition, [string]$Message) {
-    if (-not $Condition) { throw $Message }
-    Write-Host "PASS $Message"
-}
 function Get-Sha256([string]$Path) { (Get-FileHash -Algorithm SHA256 -LiteralPath $Path).Hash }
 function Copy-Replacing([string]$Source, [string]$Destination) {
     # A freshly written executable can briefly be held open by on-access
@@ -116,7 +113,7 @@ function Start-Uninstall([int]$Answer, [string]$LogName) {
         $script:activeUninstaller.Refresh()
     }
     if ($stillRunning) { throw ('Uninstaller dialog test timed out. ' + [BcmUninstallDialog]::Describe([int[]]@($owned))) }
-    Assert-Installer $answered 'real Inno confirmation dialog received the requested answer'
+    Should -ActualValue $answered -BeTrue -Because 'real Inno confirmation dialog received the requested answer'
     $script:activeUninstaller.WaitForExit()
     return $script:activeUninstaller.ExitCode
 }
@@ -184,7 +181,7 @@ try {
     $iss = Get-Content (Join-Path $repo 'installer\BatteryChargeMeter.iss') -Raw -Encoding UTF8
     $iss = $iss.Replace('AppId={{FDDC9FC9-109E-4B41-AE4A-BA30420295D0}', "AppId=$appId")
     $iss = $iss.Replace('Name: "{autoprograms}\{cm:ApplicationName}";', ('Name: "{{autoprograms}}\{0}";' -f $shortcutName))
-    Assert-Installer ($iss.Contains("AppId=$appId") -and $iss.Contains($shortcutName)) 'fixture has isolated installer identities'
+    Should -ActualValue ($iss.Contains("AppId=$appId") -and $iss.Contains($shortcutName)) -BeTrue -Because 'fixture has isolated installer identities'
     $issPath = Join-Path $root 'fixture.iss'
     $iss = '#define ChineseMessages "' + $repo + '\installer\Languages\ChineseSimplified.isl"' + [Environment]::NewLine + $iss
     Set-Content -LiteralPath $issPath -Value $iss -Encoding UTF8
@@ -232,7 +229,7 @@ class InstallerCleanupFixture {
         & "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe" /nologo /target:winexe "/out:$($build.Output)" $fixtureSource
         if ($LASTEXITCODE -ne 0) { throw 'Cleanup fixture compilation failed.' }
     }
-    Assert-Installer ((Get-Sha256 $fixtureExe) -ne (Get-Sha256 $upgradeExe)) 'upgrade fixture differs from the installed executable'
+    Should -ActualValue ((Get-Sha256 $fixtureExe) -ne (Get-Sha256 $upgradeExe)) -BeTrue -Because 'upgrade fixture differs from the installed executable'
     foreach ($setupBuild in @(@{ Version = '9.8.7'; Exe = $fixtureExe; Name = 'fixture-setup' }, @{ Version = '9.8.8'; Exe = $upgradeExe; Name = 'fixture-upgrade-setup' })) {
         & $InstallerCompilerPath '/Q' "/DAppVersion=$($setupBuild.Version)" "/DSourceExe=$($setupBuild.Exe)" "/DLegacyLauncher=$repo\dist\compat\BatteryChargeMeter.exe" "/DNoticePath=$repo\third_party\NOTICE.md" "/DLicensePath=$repo\third_party\LICENSE.LGPL-2.1.txt" "/DOutputDir=$root" "/DOutputBaseFilename=$($setupBuild.Name)" $issPath
         if ($LASTEXITCODE -ne 0) { throw 'Real installer compilation failed.' }
@@ -241,19 +238,20 @@ class InstallerCleanupFixture {
     if ($setup.ExitCode -ne 0) { throw "Isolated install failed: $($setup.ExitCode)" }
     $installed = $true
     foreach ($name in @('PowerMeter.exe', 'THIRD-PARTY-NOTICES.txt', 'LICENSE.LGPL-2.1.txt', 'unins000.exe', 'unins000.dat')) {
-        Assert-Installer (Test-Path -LiteralPath (Join-Path $installDir $name)) "installer provides $name"
+        Should -ActualValue (Test-Path -LiteralPath (Join-Path $installDir $name)) -BeTrue -Because "installer provides $name"
     }
     $legacyExe = Join-Path $installDir 'BatteryChargeMeter.exe'
-    Assert-Installer (-not (Test-Path -LiteralPath $legacyExe)) 'fresh install uses only the new executable name'
+    Should -ActualValue (-not (Test-Path -LiteralPath $legacyExe)) -BeTrue -Because 'fresh install uses only the new executable name'
     $installedName = (Get-ItemProperty $registryPath).DisplayName
-    Assert-Installer ($installedName -eq 'Power Meter') "English installer uses Power Meter branding: $installedName"
-    Assert-Installer ((Test-Path -LiteralPath $syncReceipt) -and -not (Get-TaskXml) -and -not (Test-Path -LiteralPath $protectedParent)) 'install checks startup but creates no task or protected copy while startup is off'
+    Should -ActualValue ($installedName -eq 'Power Meter') -BeTrue -Because "English installer uses Power Meter branding: $installedName"
+    Should -ActualValue ((Test-Path -LiteralPath $syncReceipt) -and -not (Get-TaskXml) -and -not (Test-Path -LiteralPath $protectedParent)) -BeTrue -Because 'install checks startup but creates no task or protected copy while startup is off'
 
     # Simulate an upgrade in the same AppId and directory over an older
     # version whose logon task still runs the user-writable old executable.
     # Setup must migrate it to the admin-only protected copy.
     Copy-Item -LiteralPath $fixtureExe -Destination $legacyExe
     $app = [Reflection.Assembly]::LoadFile($ExecutablePath)
+    $null = $app.GetType('BatteryChargeMeter.EmbeddedLibraries', $true).GetMethod('Initialize', [Reflection.BindingFlags]'Static,NonPublic').Invoke($null, @())
     $type = $app.GetType('BatteryChargeMeter.AutostartManager', $true)
     $xml = $type.GetMethod('BuildXml', [Reflection.BindingFlags]'Static,NonPublic').Invoke($null, [object[]]@([string]$legacyExe, [string]$sid))
     # Registered disabled and least-privilege so it can never execute the
@@ -262,21 +260,21 @@ class InstallerCleanupFixture {
     $xml = $xml.Replace('HighestAvailable', 'LeastPrivilege').Replace('<Enabled>true</Enabled>', '<Enabled>false</Enabled>')
     $folder.RegisterTask($taskName, $xml, 2, $sid, $null, 3, $null) | Out-Null
     $upgrade = Start-Process (Join-Path $root 'fixture-setup.exe') -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/LANG=zhCN', ('/DIR="{0}"' -f $installDir)) -Wait -PassThru
-    Assert-Installer ($upgrade.ExitCode -eq 0) 'Chinese upgrade completes in the existing installation'
-    Assert-Installer ((Get-ItemProperty $registryPath).DisplayName -eq '功率计') 'Chinese installer uses localized branding'
-    Assert-Installer ([Diagnostics.FileVersionInfo]::GetVersionInfo($legacyExe).FileDescription -eq 'Power Meter legacy launcher') 'upgrade replaces the old executable with the compatibility launcher'
+    Should -ActualValue ($upgrade.ExitCode -eq 0) -BeTrue -Because 'Chinese upgrade completes in the existing installation'
+    Should -ActualValue ((Get-ItemProperty $registryPath).DisplayName -eq '功率计') -BeTrue -Because 'Chinese installer uses localized branding'
+    Should -ActualValue ([Diagnostics.FileVersionInfo]::GetVersionInfo($legacyExe).FileDescription -eq 'Power Meter legacy launcher') -BeTrue -Because 'upgrade replaces the old executable with the compatibility launcher'
     [xml]$migrated = Get-TaskXml
-    Assert-Installer ($migrated.Task.Actions.Exec.Command -eq $protectedExe -and $migrated.Task.Actions.Exec.WorkingDirectory -eq $protectedDir) 'upgrade repoints the legacy logon task from the user-writable launcher to the protected copy'
-    Assert-Installer ($migrated.Task.Principals.Principal.RunLevel -eq 'HighestAvailable' -and $migrated.Task.Principals.Principal.UserId -eq $sid) 'migrated task keeps the elevated interactive user policy'
-    Assert-Installer ((Get-Sha256 $protectedExe) -eq (Get-Sha256 $installedExe)) 'protected copy is byte-identical to the installed executable'
-    Assert-Installer ((Get-Content -LiteralPath (Join-Path $protectedDir 'source.txt') -Raw -Encoding UTF8).Trim() -eq $installedExe) 'protected copy records its owning installation'
+    Should -ActualValue ($migrated.Task.Actions.Exec.Command -eq $protectedExe -and $migrated.Task.Actions.Exec.WorkingDirectory -eq $protectedDir) -BeTrue -Because 'upgrade repoints the legacy logon task from the user-writable launcher to the protected copy'
+    Should -ActualValue ($migrated.Task.Principals.Principal.RunLevel -eq 'HighestAvailable' -and $migrated.Task.Principals.Principal.UserId -eq $sid) -BeTrue -Because 'migrated task keeps the elevated interactive user policy'
+    Should -ActualValue ((Get-Sha256 $protectedExe) -eq (Get-Sha256 $installedExe)) -BeTrue -Because 'protected copy is byte-identical to the installed executable'
+    Should -ActualValue ((Get-Content -LiteralPath (Join-Path $protectedDir 'source.txt') -Raw -Encoding UTF8).Trim() -eq $installedExe) -BeTrue -Because 'protected copy records its owning installation'
     foreach ($protectedPath in @($protectedParent, $protectedRoot, $protectedDir, $protectedExe)) {
-        Assert-Installer (Test-AdminOnlyWrite $protectedPath) "only SYSTEM and Administrators can modify $protectedPath"
+        Should -ActualValue (Test-AdminOnlyWrite $protectedPath) -BeTrue -Because "only SYSTEM and Administrators can modify $protectedPath"
     }
-    Assert-Installer ((Get-Acl -LiteralPath $protectedRoot).AreAccessRulesProtected) 'protected copy root does not inherit parent permissions'
+    Should -ActualValue ((Get-Acl -LiteralPath $protectedRoot).AreAccessRulesProtected) -BeTrue -Because 'protected copy root does not inherit parent permissions'
     $aliasMethod = $type.GetMethod('IsCurrentCopy', [Reflection.BindingFlags]'Static,NonPublic')
-    Assert-Installer ($aliasMethod.Invoke($null, [object[]]@([string]$legacyExe, [string]$installedExe))) 'new application recognizes its installed legacy launcher'
-    Assert-Installer (-not $aliasMethod.Invoke($null, [object[]]@([string]$legacyExe, [string]$ExecutablePath))) 'another portable copy cannot claim the legacy task'
+    Should -ActualValue ($aliasMethod.Invoke($null, [object[]]@([string]$legacyExe, [string]$installedExe))) -BeTrue -Because 'new application recognizes its installed legacy launcher'
+    Should -ActualValue (-not $aliasMethod.Invoke($null, [object[]]@([string]$legacyExe, [string]$ExecutablePath))) -BeTrue -Because 'another portable copy cannot claim the legacy task'
 
     # Replacing the user-writable executable must not change what the task
     # runs. (Any ordinary process could perform this write.)
@@ -284,39 +282,39 @@ class InstallerCleanupFixture {
     $installedBackup = Join-Path $root 'installed-backup.exe'
     Copy-Item -LiteralPath $installedExe -Destination $installedBackup
     Copy-Replacing "$env:WINDIR\System32\whoami.exe" $installedExe
-    Assert-Installer ((Get-TaskCommand) -eq $protectedExe -and (Get-Sha256 $protectedExe) -eq $protectedHash) 'replacing the installed executable leaves the task target and protected copy unchanged'
+    Should -ActualValue ((Get-TaskCommand) -eq $protectedExe -and (Get-Sha256 $protectedExe) -eq $protectedHash) -BeTrue -Because 'replacing the installed executable leaves the task target and protected copy unchanged'
     Copy-Replacing $installedBackup $installedExe
 
     $migratedXml = Get-TaskXml
     Remove-Item -LiteralPath $syncReceipt
     $refresh = Start-Process (Join-Path $root 'fixture-upgrade-setup.exe') -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/LANG=en', ('/DIR="{0}"' -f $installDir)) -Wait -PassThru
-    Assert-Installer ($refresh.ExitCode -eq 0 -and (Get-Content -LiteralPath $syncReceipt -Raw).Trim() -eq '2') 'new version upgrade runs its own startup synchronization'
-    Assert-Installer ((Get-Sha256 $installedExe) -eq (Get-Sha256 $upgradeExe) -and (Get-Sha256 $protectedExe) -eq (Get-Sha256 $upgradeExe)) 'upgrade refreshes the protected copy to the new executable'
-    Assert-Installer ((Get-TaskXml) -eq $migratedXml) 'refreshing the protected copy leaves the task definition unchanged'
+    Should -ActualValue ($refresh.ExitCode -eq 0 -and (Get-Content -LiteralPath $syncReceipt -Raw).Trim() -eq '2') -BeTrue -Because 'new version upgrade runs its own startup synchronization'
+    Should -ActualValue ((Get-Sha256 $installedExe) -eq (Get-Sha256 $upgradeExe) -and (Get-Sha256 $protectedExe) -eq (Get-Sha256 $upgradeExe)) -BeTrue -Because 'upgrade refreshes the protected copy to the new executable'
+    Should -ActualValue ((Get-TaskXml) -eq $migratedXml) -BeTrue -Because 'refreshing the protected copy leaves the task definition unchanged'
     $before = Get-TaskXml
     Set-Content -LiteralPath $failureFlag -Value 'injected nonzero cleanup result'
     $legacyCleanup = Start-Process $legacyExe -ArgumentList '--remove-autostart' -Wait -PassThru
-    Assert-Installer ($legacyCleanup.ExitCode -eq 1 -and (Test-Path -LiteralPath $receipt)) 'legacy launcher forwards cleanup and preserves its failure code'
+    Should -ActualValue ($legacyCleanup.ExitCode -eq 1 -and (Test-Path -LiteralPath $receipt)) -BeTrue -Because 'legacy launcher forwards cleanup and preserves its failure code'
     Remove-Item -LiteralPath $failureFlag, $receipt
     $cancelCode = Start-Uninstall 7 'cancel.log'
-    Assert-Installer (-not (Test-Path -LiteralPath $receipt)) 'cancel never invokes startup cleanup'
-    Assert-Installer ($folder.GetTask($taskName).Xml -eq $before) 'cancel preserves the actual task unchanged'
-    Assert-Installer ((Get-Sha256 $protectedExe) -eq (Get-Sha256 $upgradeExe)) 'cancel preserves the protected copy'
-    Assert-Installer ((Test-Path -LiteralPath $installedExe) -and (Test-Path -LiteralPath $uninstaller)) 'cancel preserves installed executable and uninstaller'
+    Should -ActualValue (-not (Test-Path -LiteralPath $receipt)) -BeTrue -Because 'cancel never invokes startup cleanup'
+    Should -ActualValue ($folder.GetTask($taskName).Xml -eq $before) -BeTrue -Because 'cancel preserves the actual task unchanged'
+    Should -ActualValue ((Get-Sha256 $protectedExe) -eq (Get-Sha256 $upgradeExe)) -BeTrue -Because 'cancel preserves the protected copy'
+    Should -ActualValue ((Test-Path -LiteralPath $installedExe) -and (Test-Path -LiteralPath $uninstaller)) -BeTrue -Because 'cancel preserves installed executable and uninstaller'
 
     Set-Content -LiteralPath $failureFlag -Value 'injected nonzero cleanup result'
     $failureCode = Start-Uninstall 6 'failure.log'
-    Assert-Installer ($failureCode -ne 0 -and (Test-Path -LiteralPath $receipt)) 'affirmative uninstall propagates cleanup failure'
-    Assert-Installer ($folder.GetTask($taskName).Xml -eq $before) 'cleanup failure preserves the actual task'
-    Assert-Installer (Test-Path -LiteralPath $protectedExe) 'cleanup failure preserves the protected copy'
-    Assert-Installer ((Test-Path -LiteralPath $installedExe) -and (Test-Path -LiteralPath $uninstaller) -and (Test-Path -LiteralPath (Join-Path $installDir 'unins000.dat'))) 'fatal hook exception preserves application and uninstall data'
+    Should -ActualValue ($failureCode -ne 0 -and (Test-Path -LiteralPath $receipt)) -BeTrue -Because 'affirmative uninstall propagates cleanup failure'
+    Should -ActualValue ($folder.GetTask($taskName).Xml -eq $before) -BeTrue -Because 'cleanup failure preserves the actual task'
+    Should -ActualValue (Test-Path -LiteralPath $protectedExe) -BeTrue -Because 'cleanup failure preserves the protected copy'
+    Should -ActualValue ((Test-Path -LiteralPath $installedExe) -and (Test-Path -LiteralPath $uninstaller) -and (Test-Path -LiteralPath (Join-Path $installDir 'unins000.dat'))) -BeTrue -Because 'fatal hook exception preserves application and uninstall data'
     Remove-Item -LiteralPath $failureFlag
     $acceptedCode = Start-Uninstall 6 'accept.log'
-    Assert-Installer ($acceptedCode -eq 0) 'affirmative uninstall succeeds after cleanup succeeds'
+    Should -ActualValue ($acceptedCode -eq 0) -BeTrue -Because 'affirmative uninstall succeeds after cleanup succeeds'
     $exists = [bool](Get-TaskXml)
-    Assert-Installer (-not $exists) 'affirmative uninstall deletes only the isolated task through shipping cleanup code'
-    Assert-Installer (-not (Test-Path -LiteralPath $protectedParent)) 'affirmative uninstall removes the protected copy and its now-empty folders'
-    Assert-Installer (-not (Test-Path -LiteralPath $installedExe) -and -not (Test-Path -LiteralPath $uninstaller)) 'affirmative uninstall removes application and uninstaller'
+    Should -ActualValue (-not $exists) -BeTrue -Because 'affirmative uninstall deletes only the isolated task through shipping cleanup code'
+    Should -ActualValue (-not (Test-Path -LiteralPath $protectedParent)) -BeTrue -Because 'affirmative uninstall removes the protected copy and its now-empty folders'
+    Should -ActualValue (-not (Test-Path -LiteralPath $installedExe) -and -not (Test-Path -LiteralPath $uninstaller)) -BeTrue -Because 'affirmative uninstall removes application and uninstaller'
     $installed = $false
 
     # A same-name task that fails the ownership check (edited by the user or
@@ -325,7 +323,7 @@ class InstallerCleanupFixture {
     # the task's action arguments; it is registered disabled and
     # least-privilege so it can never run.
     $reinstall = Start-Process (Join-Path $root 'fixture-setup.exe') -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/LANG=en', ('/DIR="{0}"' -f $installDir)) -Wait -PassThru
-    Assert-Installer ($reinstall.ExitCode -eq 0) 'reinstall for the foreign-task case completes'
+    Should -ActualValue ($reinstall.ExitCode -eq 0) -BeTrue -Because 'reinstall for the foreign-task case completes'
     $installed = $true
     $flags = [Reflection.BindingFlags]'Instance,NonPublic'
     $manager = $type.GetConstructor($flags, $null, [type[]]@([string], [string], [string], [string]), $null).Invoke([object[]]@([string]$installedExe, [string]$sid, [string]$taskName, [string]$protectedRoot))
@@ -333,17 +331,17 @@ class InstallerCleanupFixture {
         $expected = $type.GetMethod('Read', $flags).Invoke($manager, $null)
         $type.GetMethod('Enable', $flags).Invoke($manager, [object[]]@($expected))
     } finally { $manager.Dispose() }
-    Assert-Installer ((Get-TaskCommand) -eq $protectedExe -and (Test-Path -LiteralPath $protectedExe)) 'reinstalled copy enables startup with its protected copy'
+    Should -ActualValue ((Get-TaskCommand) -eq $protectedExe -and (Test-Path -LiteralPath $protectedExe)) -BeTrue -Because 'reinstalled copy enables startup with its protected copy'
     $foreignXml = (Get-TaskXml).Replace('<Arguments>--autostart</Arguments>', '<Arguments>--not-power-meter</Arguments>').Replace('HighestAvailable', 'LeastPrivilege').Replace('<Enabled>true</Enabled>', '<Enabled>false</Enabled>')
     $folder.RegisterTask($taskName, $foreignXml, 6, $sid, $null, 3, $null) | Out-Null
     $foreignXml = Get-TaskXml
-    Assert-Installer ($foreignXml -match '--not-power-meter') 'same-name task now has a shape this program never registers'
+    Should -ActualValue ($foreignXml -match '--not-power-meter') -BeTrue -Because 'same-name task now has a shape this program never registers'
     Remove-Item -LiteralPath $receipt -ErrorAction SilentlyContinue
     $foreignCode = Start-Uninstall 6 'foreign.log'
-    Assert-Installer ($foreignCode -eq 0 -and (Test-Path -LiteralPath $receipt)) 'uninstall runs cleanup and completes despite a foreign same-name task'
-    Assert-Installer ((Get-TaskXml) -eq $foreignXml) 'uninstall leaves the foreign same-name task unchanged'
-    Assert-Installer (-not (Test-Path -LiteralPath $protectedParent)) 'uninstall still removes this installation''s protected copy and empty folders'
-    Assert-Installer (-not (Test-Path -LiteralPath $installedExe) -and -not (Test-Path -LiteralPath $uninstaller)) 'uninstall with a foreign task removes application and uninstaller'
+    Should -ActualValue ($foreignCode -eq 0 -and (Test-Path -LiteralPath $receipt)) -BeTrue -Because 'uninstall runs cleanup and completes despite a foreign same-name task'
+    Should -ActualValue ((Get-TaskXml) -eq $foreignXml) -BeTrue -Because 'uninstall leaves the foreign same-name task unchanged'
+    Should -ActualValue (-not (Test-Path -LiteralPath $protectedParent)) -BeTrue -Because 'uninstall still removes this installation''s protected copy and empty folders'
+    Should -ActualValue (-not (Test-Path -LiteralPath $installedExe) -and -not (Test-Path -LiteralPath $uninstaller)) -BeTrue -Because 'uninstall with a foreign task removes application and uninstaller'
     $installed = $false
     Write-Host 'Real Inno migration/refresh, cancel/failure/accept and foreign-task lifecycle passed.'
 }

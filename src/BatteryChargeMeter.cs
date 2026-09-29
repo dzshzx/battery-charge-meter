@@ -13,6 +13,7 @@ using System.Windows.Forms;
     FrameworkDisplayName = ".NET Framework 4.7")]
 [assembly: System.Reflection.AssemblyTitle("Power Meter")]
 [assembly: System.Reflection.AssemblyProduct("Power Meter")]
+[assembly: System.Runtime.CompilerServices.InternalsVisibleTo("PowerMeter.Tests")]
 
 namespace BatteryChargeMeter
 {
@@ -634,7 +635,7 @@ namespace BatteryChargeMeter
         [STAThread]
         private static void Main(string[] args)
         {
-            EmbeddedUi.Initialize();
+            EmbeddedLibraries.Initialize();
             Run(args);
         }
 

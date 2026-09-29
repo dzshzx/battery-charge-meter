@@ -34,6 +34,10 @@ jobs:
           uv lock --check
           uv lock --check --script scripts/make-icon.py
 
+      - name: Install Pester (test scripts need 5.x in both PowerShell editions)
+        shell: pwsh
+        run: Save-PSResource -Name Pester -Version 5.9.1 -Repository PSGallery -TrustRepository -Path "$env:ProgramFiles\WindowsPowerShell\Modules"
+
       - name: Test application and Release packages
         shell: pwsh
         run: ./scripts/test.ps1 -RequireInstaller

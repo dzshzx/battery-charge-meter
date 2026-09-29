@@ -5,6 +5,8 @@ using System.Globalization;
 using System.IO;
 using System.Security.Principal;
 using System.Windows.Forms;
+using System.CommandLine;
+using System.CommandLine.Parsing;
 
 namespace BatteryChargeMeter
 {
@@ -31,65 +33,135 @@ namespace BatteryChargeMeter
         public static StartupRoute Parse(string[] args)
         {
             StartupRoute route = new StartupRoute();
-            if (args.Length == 0)
+            // Command names are case-insensitive, as they always were.
+            string[] tokens = (string[])args.Clone();
+            if (tokens.Length > 0)
+                tokens[0] = tokens[0].ToLowerInvariant();
+            ParseResult result = StartupGrammar.Root.Parse(tokens, StartupGrammar.Configuration);
+            // A GUI marker or a command must stand alone.
+            System.CommandLine.Command command = result.CommandResult.Command;
+            route.Valid = result.Errors.Count == 0 && (command == StartupGrammar.Root
+                ? tokens.Length <= 1
+                : tokens[0] == command.Name);
+            if (!route.Valid)
+                return route;
+            if (command == StartupGrammar.Root)
             {
-                route.Valid = true;
+                route.SuppressElevation = tokens.Length == 1;
+                route.StartHidden = result.GetValue(StartupGrammar.Autostart);
+                route.Handoff = result.GetValue(StartupGrammar.ElevationAttempted);
                 return route;
             }
-            string command = args[0].ToLowerInvariant();
-            if (args.Length == 1 && (command == "--no-elevate" || command == "--elevation-attempted" || command == "--autostart"))
+            route.Command = command.Name;
+            if (command.Arguments.Contains(StartupGrammar.Output))
+                route.Path = result.GetValue(StartupGrammar.Output);
+            if (command == StartupGrammar.PowerProbe)
+                route.Seconds = result.GetValue(StartupGrammar.Seconds);
+            else if (command == StartupGrammar.DpiPreview)
+                route.Dpis = result.GetValue(StartupGrammar.Dpis);
+            else if (command == StartupGrammar.TrayPreview)
             {
-                route.Valid = true;
-                route.SuppressElevation = true;
-                route.StartHidden = command == "--autostart";
-                route.Handoff = command == "--elevation-attempted";
-                return route;
+                route.TrayGlyph = result.GetValue(StartupGrammar.Glyph);
+                route.TrayDischarging = String.Equals(result.GetValue(StartupGrammar.TrayMode), "discharging", StringComparison.OrdinalIgnoreCase);
             }
-            route.Command = command;
-            if (args.Length > 1)
-                route.Path = args[1];
-            switch (command)
-            {
-                case "--remove-autostart":
-                case "--sync-autostart":
-                    route.Valid = args.Length == 1;
-                    break;
-                case "--self-test":
-                case "--third-party-notices":
-                case "--screenshot":
-                    route.Valid = args.Length == 2;
-                    break;
-                case "--power-probe":
-                    route.Valid = args.Length == 2 || (args.Length == 3
-                        && TryParse(args[2], 1, 3600, out route.Seconds));
-                    break;
-                case "--dpi-preview":
-                    route.Valid = args.Length == 3 || args.Length == 4;
-                    if (route.Valid)
-                        route.Dpis = new int[args.Length - 2];
-                    for (int i = 2; route.Valid && i < args.Length; i++)
-                        route.Valid = TryParse(args[i], 96, 768, out route.Dpis[i - 2]);
-                    break;
-                case "--tray-preview":
-                    route.Valid = args.Length == 4 && !String.IsNullOrWhiteSpace(args[2])
-                        && (String.Equals(args[3], "charging", StringComparison.OrdinalIgnoreCase)
-                            || String.Equals(args[3], "discharging", StringComparison.OrdinalIgnoreCase));
-                    if (route.Valid)
-                    {
-                        route.TrayGlyph = args[2];
-                        route.TrayDischarging = String.Equals(args[3], "discharging", StringComparison.OrdinalIgnoreCase);
-                    }
-                    break;
-            }
-            if (args.Length > 1 && String.IsNullOrWhiteSpace(args[1]))
-                route.Valid = false;
             return route;
         }
+    }
 
-        private static bool TryParse(string text, int minimum, int maximum, out int number)
+    // The command line grammar: three GUI markers, and CLI commands spelled
+    // like options that take positional arguments. Built once; parsing never
+    // invokes actions, prints help or expands response files.
+    internal static class StartupGrammar
+    {
+        internal static readonly Option<bool> NoElevate = new Option<bool>("--no-elevate");
+        internal static readonly Option<bool> ElevationAttempted = new Option<bool>("--elevation-attempted");
+        internal static readonly Option<bool> Autostart = new Option<bool>("--autostart");
+        // Output file of --self-test, --third-party-notices, --screenshot,
+        // --power-probe, --dpi-preview and --tray-preview.
+        internal static readonly Argument<string> Output = NonBlank(new Argument<string>("output"));
+        internal static readonly Argument<int> Seconds = Range(new Argument<int>("seconds")
         {
-            return Int32.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out number)
-                && number >= minimum && number <= maximum;
+            Arity = ArgumentArity.ZeroOrOne,
+            DefaultValueFactory = delegate { return 5; }
+        }, 1, 3600);
+        internal static readonly Argument<int[]> Dpis = Range(new Argument<int[]>("dpi") { Arity = new ArgumentArity(1, 2) }, 96, 768);
+        internal static readonly Argument<string> Glyph = NonBlank(new Argument<string>("glyph"));
+        internal static readonly Argument<string> TrayMode = OneOf(new Argument<string>("state"), "charging", "discharging");
+        internal static readonly Command PowerProbe = Define("--power-probe", Output, Seconds);
+        internal static readonly Command DpiPreview = Define("--dpi-preview", Output, Dpis);
+        internal static readonly Command TrayPreview = Define("--tray-preview", Output, Glyph, TrayMode);
+        internal static readonly RootCommand Root = BuildRoot();
+        internal static readonly ParserConfiguration Configuration = new ParserConfiguration
+        {
+            EnablePosixBundling = false,
+            ResponseFileTokenReplacer = null
+        };
+
+        private static RootCommand BuildRoot()
+        {
+            RootCommand root = new RootCommand();
+            // No --help, --version or [directives]: unknown input is invalid.
+            root.Options.Clear();
+            root.Directives.Clear();
+            root.Options.Add(NoElevate);
+            root.Options.Add(ElevationAttempted);
+            root.Options.Add(Autostart);
+            root.Subcommands.Add(Define("--remove-autostart"));
+            root.Subcommands.Add(Define("--sync-autostart"));
+            root.Subcommands.Add(Define("--self-test", Output));
+            root.Subcommands.Add(Define("--third-party-notices", Output));
+            root.Subcommands.Add(Define("--screenshot", Output));
+            root.Subcommands.Add(PowerProbe);
+            root.Subcommands.Add(DpiPreview);
+            root.Subcommands.Add(TrayPreview);
+            // The GUI is the root itself; without an action the parser would
+            // demand a subcommand. Nothing here is ever invoked.
+            root.SetAction(delegate(ParseResult result) { return 0; });
+            return root;
+        }
+
+        private static Command Define(string name, params Argument[] arguments)
+        {
+            Command command = new Command(name);
+            foreach (Argument argument in arguments)
+                command.Arguments.Add(argument);
+            return command;
+        }
+
+        private static Argument<string> NonBlank(Argument<string> argument)
+        {
+            argument.Validators.Add(delegate(ArgumentResult result)
+            {
+                if (String.IsNullOrWhiteSpace(result.GetValueOrDefault<string>()))
+                    result.AddError(argument.Name + " must not be blank.");
+            });
+            return argument;
+        }
+
+        private static Argument<string> OneOf(Argument<string> argument, params string[] allowed)
+        {
+            argument.Validators.Add(delegate(ArgumentResult result)
+            {
+                string value = result.GetValueOrDefault<string>();
+                if (Array.FindIndex(allowed, delegate(string item) { return String.Equals(item, value, StringComparison.OrdinalIgnoreCase); }) < 0)
+                    result.AddError(argument.Name + " is not one of: " + String.Join(", ", allowed));
+            });
+            return argument;
+        }
+
+        private static Argument<T> Range<T>(Argument<T> argument, int minimum, int maximum)
+        {
+            argument.Validators.Add(delegate(ArgumentResult result)
+            {
+                foreach (Token token in result.Tokens)
+                {
+                    int number;
+                    if (!Int32.TryParse(token.Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out number)
+                        || number < minimum || number > maximum)
+                        result.AddError(argument.Name + " must be an integer from " + minimum + " to " + maximum + ".");
+                }
+            });
+            return argument;
         }
     }
 

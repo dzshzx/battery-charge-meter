@@ -16,7 +16,8 @@ commands are in `README.md`, and PawnIO obligations in `third_party/NOTICE.md`.
   which returns a `MeterView` that `MainForm` only binds; snapshots come only
   from `PowerSnapshot.Compose`. Startup decisions (exit codes, steps, switch
   state) live in the pure `AutostartPolicy`; `AutostartManager` gathers facts
-  and executes. Cover new rules through these interfaces in `--self-test`.
+  and executes. Cover new rules through these interfaces in the xUnit
+  project `tests/PowerMeter.Tests`; `--self-test` is the release EXE smoke.
 - Portable EXE and per-user installer are equal release options. Preserve the
   replaceable `IntelMSR.bin` sidecar, LGPL notice/licence and exact corresponding
   source bundle; release assets include both formats and SHA-256 files.

@@ -26,7 +26,13 @@ namespace BatteryChargeMeter
                     + ReadResource("Apache-2.0.txt") + Environment.NewLine + Environment.NewLine
                     + "Lucide icons" + Environment.NewLine + ReadResource("Lucide-license.txt")
                     + Environment.NewLine + Environment.NewLine + "SVG.NET (included in AntdUI)" + Environment.NewLine
-                    + ReadResource("Ms-PL.txt"),
+                    + ReadResource("Ms-PL.txt")
+                    + Environment.NewLine + Environment.NewLine + "TaskScheduler - MIT License" + Environment.NewLine
+                    + ReadResource("TaskScheduler-license.txt")
+                    + Environment.NewLine + Environment.NewLine
+                    + "System.CommandLine, System.Memory, System.Buffers, System.Numerics.Vectors,"
+                    + " System.Runtime.CompilerServices.Unsafe and .NET Standard facades - MIT License" + Environment.NewLine
+                    + ReadResource("dotnet-MIT.txt"),
                 Encoding.UTF8);
         }
 

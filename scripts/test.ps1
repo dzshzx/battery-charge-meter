@@ -16,6 +16,7 @@ $phase = 'source-and-preparation'
 $checks = [ordered]@{
     'source-and-preparation' = 'not-run'
     'build' = 'not-run'
+    'unit-tests' = 'not-run'
     'portable-executable' = 'not-run'
     'release-packaging-inputs' = 'not-run'
     'real-installer-install-uninstall' = 'not-run'
@@ -139,6 +140,20 @@ finally {
 }
 if ($targetFrameworkName -ne '.NETFramework,Version=v4.7') {
     throw "Expected .NET Framework 4.7 assembly metadata; found: $targetFrameworkName"
+}
+
+Complete-Phase 'unit-tests'
+# Rules behind the EXE (tests/PowerMeter.Tests, xUnit v3). The test project is
+# its own runner; its lock file is enforced like the application's.
+$unitTestProject = Join-Path $repoRoot 'tests\PowerMeter.Tests\PowerMeter.Tests.csproj'
+$unitTestOutput = Join-Path $repoRoot 'tests\PowerMeter.Tests\bin\verify'
+& dotnet build $unitTestProject --configuration Release -p:RestoreLockedMode=true --nologo --output $unitTestOutput
+if ($LASTEXITCODE -ne 0) {
+    throw "Unit test build failed with exit code $LASTEXITCODE."
+}
+& (Join-Path $unitTestOutput 'PowerMeter.Tests.exe')
+if ($LASTEXITCODE -ne 0) {
+    throw "Unit tests failed with exit code $LASTEXITCODE."
 }
 
 Complete-Phase 'portable-executable'
@@ -510,10 +525,8 @@ finally {
     }
 }
 
-# Power derivation across supply states and firmware rate combinations. These
-# paths hand the user a wrong number without any sensor misbehaving, and no
-# single machine can be put into all of them on demand, so they are checked
-# mechanically rather than by whatever state this machine happens to be in.
+# Release smoke of the built EXE: its embedded libraries load and the window
+# binds a view. The derivation rules are covered by the unit-test phase.
 $selfTestDir = Join-Path ([IO.Path]::GetTempPath()) ([Guid]::NewGuid().ToString('n'))
 New-Item -ItemType Directory -Path $selfTestDir | Out-Null
 try {

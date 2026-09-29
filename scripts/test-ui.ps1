@@ -5,6 +5,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+Import-Module Pester -MinimumVersion 5.9.1 -MaximumVersion 5.999 -ErrorAction Stop
 if ($PSVersionTable.PSEdition -ne 'Desktop') {
     & "$env:WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -File $PSCommandPath `
         -Executable $Executable -OutputDirectory $OutputDirectory
@@ -150,7 +151,7 @@ if ($originalDpiContext -eq [IntPtr]::Zero) { throw 'Unable to match the applica
 [Windows.Forms.Application]::SetUnhandledExceptionMode([Windows.Forms.UnhandledExceptionMode]::ThrowException)
 $Executable = (Resolve-Path -LiteralPath $Executable).Path
 $assembly = [Reflection.Assembly]::LoadFile($Executable)
-$assembly.GetType('BatteryChargeMeter.EmbeddedUi').GetMethod('Initialize', [Reflection.BindingFlags]'Static,NonPublic').Invoke($null, @())
+$assembly.GetType('BatteryChargeMeter.EmbeddedLibraries').GetMethod('Initialize', [Reflection.BindingFlags]'Static,NonPublic').Invoke($null, @())
 $flags = [Reflection.BindingFlags]'Instance,Public,NonPublic'
 New-Item -ItemType Directory -Force -Path $OutputDirectory | Out-Null
 
@@ -179,9 +180,6 @@ function New-Sample([string]$Boundary, [double]$Watts) {
     $sample.Source = 'UI acceptance fixture'
     return $sample
 }
-function Assert-True([bool]$Value, [string]$Message) {
-    if (-not $Value) { throw $Message }
-}
 function Assert-Layout($Parent) {
     [FooterTextProbe]::AssertLayout($Parent)
 }
@@ -202,7 +200,7 @@ try {
     foreach ($language in @('zh-CN', 'en', 'zh-CN')) {
     $stringsType.GetMethod('Select', [Reflection.BindingFlags]'Static,NonPublic').Invoke($null, @($language, $false))
     Invoke-Internal $form 'ApplyLanguage'
-    Assert-True ($form.Text -eq $(if ($language -eq 'en') { 'Power Meter' } else { '功率计' })) 'Incorrect localized application name'
+    Should -ActualValue ($form.Text -eq $(if ($language -eq 'en') { 'Power Meter' } else { '功率计' })) -BeTrue -Because 'Incorrect localized application name'
     foreach ($dpi in @(96, 144, 168, 192, 288, 96)) {
         Invoke-Internal $form 'SendDpiTransition' @([int]$dpi)
         foreach ($scenario in @('idle', 'charging', 'discharging', 'supplemented', 'unavailable', 'starting', 'warming')) {
@@ -251,52 +249,52 @@ try {
             $scale = $dpi / 96.0
             $diagnostics = Get-Field $form 'errorLabel'
             $expectedHeight = if ($scenario -eq 'unavailable') { 528 } else { 468 }
-            Assert-True ($form.AutoScrollMinSize.Height -eq [Math]::Round($expectedHeight * $scale)) `
+            Should -ActualValue ($form.AutoScrollMinSize.Height -eq [Math]::Round($expectedHeight * $scale)) -BeTrue -Because `
                 'Diagnostic expansion/collapse did not resize the content'
-            Assert-True ($diagnostics.Visible -eq ($scenario -eq 'unavailable')) 'Unexpected diagnostic visibility'
+            Should -ActualValue ($diagnostics.Visible -eq ($scenario -eq 'unavailable')) -BeTrue -Because 'Unexpected diagnostic visibility'
             Assert-Layout $form
             $sourceValues = Get-Field $form 'sourceValues'
-            Assert-True (@($sourceValues | Where-Object Visible).Count -eq 3) 'Only the three supporting metrics should repeat below the headline'
+            Should -ActualValue (@($sourceValues | Where-Object Visible).Count -eq 3) -BeTrue -Because 'Only the three supporting metrics should repeat below the headline'
             $headlineIndex = if ($mode -eq 'Battery') { 0 } else { 3 }
-            Assert-True (-not $sourceValues[$headlineIndex].Visible) 'Headline metric was duplicated in the detail group'
+            Should -ActualValue (-not $sourceValues[$headlineIndex].Visible) -BeTrue -Because 'Headline metric was duplicated in the detail group'
             if ($scenario -eq 'idle') {
                 [FooterTextProbe]::AssertReadoutBaseline((Get-Field $form 'powerLabel'))
                 $expectedAverage = if ($language -eq 'en') { '30s average' } else { '30 秒均值' }
                 $expectedPeak = if ($language -eq 'en') { '60s peak' } else { '60 秒峰值' }
-                Assert-True ((Get-Field $form 'statisticsCaption').Text -eq $expectedAverage) 'Full average window should have a concise caption'
-                Assert-True ((Get-Field $form 'historyCaption').Text -eq $expectedPeak) 'Full peak window should have a concise caption'
+                Should -ActualValue ((Get-Field $form 'statisticsCaption').Text -eq $expectedAverage) -BeTrue -Because 'Full average window should have a concise caption'
+                Should -ActualValue ((Get-Field $form 'historyCaption').Text -eq $expectedPeak) -BeTrue -Because 'Full peak window should have a concise caption'
                 [FooterTextProbe]::AssertHover((Get-Field $form 'modeSegments'))
                 $inkTops = @(@((Get-Field $form 'statisticsLabel'), (Get-Field $form 'historyLabel')) | ForEach-Object { [FooterTextProbe]::InkTop($_) })
                 $range = $inkTops | Measure-Object -Minimum -Maximum
-                Assert-True ($inkTops.Count -eq 2 -and $range.Maximum - $range.Minimum -le 1) `
+                Should -ActualValue ($inkTops.Count -eq 2 -and $range.Maximum - $range.Minimum -le 1) -BeTrue -Because `
                     "Statistic baselines differ at $dpi DPI ($language): $($inkTops -join ', ')"
             }
             if ($scenario -eq 'warming') {
-                Assert-True ((Get-Field $form 'statisticsCaption').Text.Contains('3/30s')) 'Partial average coverage must remain visible'
-                Assert-True ((Get-Field $form 'historyCaption').Text.Contains('3/60s')) 'Partial peak duration must remain visible'
+                Should -ActualValue ((Get-Field $form 'statisticsCaption').Text.Contains('3/30s')) -BeTrue -Because 'Partial average coverage must remain visible'
+                Should -ActualValue ((Get-Field $form 'historyCaption').Text.Contains('3/60s')) -BeTrue -Because 'Partial peak duration must remain visible'
             }
             if ($language -eq 'en') {
-                Assert-True ($diagnostics.Text -notmatch '[\u4e00-\u9fff]') 'English diagnostics contain untranslated application text'
+                Should -ActualValue ($diagnostics.Text -notmatch '[\u4e00-\u9fff]') -BeTrue -Because 'English diagnostics contain untranslated application text'
             }
             $path = Join-Path $OutputDirectory "$language-$scenario-$dpi.png"
             Invoke-Internal $form 'CapturePreview' @($path, "Fixture=$scenario; Dpi=$dpi")
             if ($scenario -eq 'idle') {
                 $pin = Get-Field $form 'pinButton'
                 [FooterTextProbe]::Click($pin)
-                Assert-True (-not $form.TopMost) 'Pin action did not clear TopMost'
+                Should -ActualValue (-not $form.TopMost) -BeTrue -Because 'Pin action did not clear TopMost'
                 [FooterTextProbe]::AssertIcon($pin)
                 [FooterTextProbe]::Click($pin)
-                Assert-True $form.TopMost 'Pin action did not restore TopMost'
+                Should -ActualValue $form.TopMost -BeTrue -Because 'Pin action did not restore TopMost'
                 [FooterTextProbe]::AssertIcon($pin)
                 [FooterTextProbe]::Click((Get-Field $form 'settingsButton'))
                 [Windows.Forms.Application]::DoEvents()
                 $settings = Get-Field $form 'settingsContent'
-                Assert-True ($null -ne $settings -and -not $settings.IsDisposed) 'Settings did not open'
-                Assert-True ($settings.Width -eq [Math]::Round(316 * $scale)) 'Settings content was scaled twice'
+                Should -ActualValue ($null -ne $settings -and -not $settings.IsDisposed) -BeTrue -Because 'Settings did not open'
+                Should -ActualValue ($settings.Width -eq [Math]::Round(316 * $scale)) -BeTrue -Because 'Settings content was scaled twice'
                 Assert-Layout $settings
                 [FooterTextProbe]::Capture($settings, (Join-Path $OutputDirectory "$language-settings-$dpi.png"))
                 Invoke-Internal $form 'SendDpiTransition' @([int]$dpi)
-                Assert-True ($null -eq (Get-Field $form 'settingsContent')) 'DPI transition did not close settings before rescaling fonts'
+                Should -ActualValue ($null -eq (Get-Field $form 'settingsContent')) -BeTrue -Because 'DPI transition did not close settings before rescaling fonts'
             }
         }
         Write-Host "PASS $language at $dpi DPI: seven reading scenarios, text fit, hover, geometry, diagnostics and captures"

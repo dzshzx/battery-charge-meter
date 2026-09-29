@@ -1,12 +1,9 @@
 using System;
-using System.Globalization;
 using System.IO;
-using System.Reflection;
-using System.Runtime.InteropServices;
 using System.Security.Principal;
 using System.Security.AccessControl;
 using System.Threading;
-using System.Xml;
+using Microsoft.Win32.TaskScheduler;
 
 namespace BatteryChargeMeter
 {
@@ -240,11 +237,19 @@ namespace BatteryChargeMeter
         }
     }
 
-    // Use the Windows-provided Task Scheduler COM API. No service, password,
-    // external executable, or third-party scheduler library is needed.
+    // Registers and reads the logon task through the TaskScheduler library
+    // (a managed wrapper over the Windows Task Scheduler 2.0 COM API). No
+    // service, password or external executable is needed.
     internal sealed class AutostartManager : IDisposable
     {
         private const string Owner = "BatteryChargeMeter.Logon.v1";
+        private const string Arguments = "--autostart";
+        // Full control for SYSTEM and administrators; the same user's ordinary
+        // token may inspect, run and delete the task (including per-user
+        // uninstall), but cannot rewrite its elevated action. The protected
+        // DACL suppresses Scheduler's automatic extra principal ACE. The
+        // action itself lives in an admin-only directory (ProtectedCopy).
+        private const string SecurityPrefix = "D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GRGXSD;;;";
         // The running file, and the installation it represents. They differ
         // only when running from the protected copy.
         private readonly string image;
@@ -253,8 +258,8 @@ namespace BatteryChargeMeter
         private readonly string sid;
         private readonly string taskName;
         private readonly bool elevated;
-        private object service;
-        private object folder;
+        private TaskService service;
+        private TaskFolder folder;
 
         internal AutostartManager(string path, string userSid, string name, string protectedRoot)
         {
@@ -266,9 +271,8 @@ namespace BatteryChargeMeter
             elevated = Startup.IsElevated();
             try
             {
-                service = Activator.CreateInstance(Type.GetTypeFromProgID("Schedule.Service", true));
-                Call(service, "Connect");
-                folder = Call(service, "GetFolder", @"\");
+                service = new TaskService();
+                folder = service.RootFolder;
             }
             catch
             {
@@ -289,24 +293,11 @@ namespace BatteryChargeMeter
 
         internal AutostartState Read()
         {
-            object task = null;
-            try
+            using (Task task = folder.Tasks.Exists(taskName) ? folder.Tasks[taskName] : null)
             {
-                try
-                {
-                    task = Call(folder, "GetTask", taskName);
-                }
-                catch (Exception error)
-                {
-                    if (IsMissing(error))
-                        return new AutostartState();
-                    throw;
-                }
-                return Inspect((string)Get(task, "Xml"), identity, sid, copy.Executable, copy.ReadSource());
-            }
-            finally
-            {
-                Release(task);
+                if (task == null)
+                    return new AutostartState();
+                return Inspect(task.Definition, identity, sid, copy.Executable, copy.ReadSource());
             }
         }
 
@@ -407,7 +398,7 @@ namespace BatteryChargeMeter
                 throw new InvalidOperationException(plan.Refusal);
             if (plan.DeleteTask)
             {
-                Call(folder, "DeleteTask", taskName, 0);
+                folder.DeleteTask(taskName, false);
                 if (Read().ThisCopy)
                     throw new InvalidOperationException("自启任务删除后的读取校验失败。");
             }
@@ -423,21 +414,12 @@ namespace BatteryChargeMeter
         // The protected copy must already hold this installation's files.
         private void Register()
         {
-            object registered = null;
-            try
+            TaskDefinition definition = service.NewTask();
+            Configure(definition, copy.Executable, sid);
+            using (folder.RegisterTaskDefinition(taskName, definition,
+                TaskCreation.CreateOrUpdate | TaskCreation.IgnoreRegistrationTriggers,
+                sid, null, TaskLogonType.InteractiveToken, SecurityPrefix + sid + ")"))
             {
-                registered = Call(folder, "RegisterTask", taskName,
-                    BuildXml(copy.Executable, sid), 6 | 0x10, sid, null, 3,
-                    "D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GRGXSD;;;" + sid + ")");
-                // The same user's ordinary token may inspect, run and delete
-                // the task (including per-user uninstall), but cannot rewrite
-                // its elevated action. Keep full control for SYSTEM/admins and
-                // suppress Scheduler's automatic extra principal ACE. The action
-                // itself lives in an admin-only directory (ProtectedCopy).
-            }
-            finally
-            {
-                Release(registered);
             }
             AutostartState after = Read();
             if (!after.ThisCopy || !after.Enabled || !after.Protected)
@@ -446,23 +428,18 @@ namespace BatteryChargeMeter
 
         private void RunTask()
         {
-            object task = null;
             try
             {
-                task = Call(folder, "GetTask", taskName);
-                Release(Call(task, "Run", (object)null));
+                using (Task task = folder.Tasks[taskName])
+                    task.Run();
             }
             catch (Exception)
             {
                 // The instance returns at the next sign-in.
             }
-            finally
-            {
-                Release(task);
-            }
         }
 
-        private void Mutate(Action change)
+        private void Mutate(System.Action change)
         {
             MutexSecurity security = new MutexSecurity();
             security.AddAccessRule(new MutexAccessRule(new SecurityIdentifier(sid),
@@ -492,35 +469,67 @@ namespace BatteryChargeMeter
             }
         }
 
-        internal static AutostartState Inspect(string xml, string path, string userSid,
+        // The one task shape this program registers: a logon trigger and an
+        // elevated interactive principal for the user, battery-, idle- and
+        // network-independent, unlimited, single-instance.
+        internal static void Configure(TaskDefinition definition, string path, string userSid)
+        {
+            string target = Path.GetFullPath(path);
+            definition.RegistrationInfo.Source = Owner;
+            definition.Triggers.Add(new LogonTrigger { UserId = userSid, Enabled = true });
+            definition.Principal.Id = "User";
+            definition.Principal.UserId = userSid;
+            definition.Principal.LogonType = TaskLogonType.InteractiveToken;
+            definition.Principal.RunLevel = TaskRunLevel.Highest;
+            definition.Actions.Context = "User";
+            definition.Actions.Add(new ExecAction(target, Arguments, Path.GetDirectoryName(target)));
+            TaskSettings settings = definition.Settings;
+            settings.MultipleInstances = TaskInstancesPolicy.IgnoreNew;
+            settings.DisallowStartIfOnBatteries = false;
+            settings.StopIfGoingOnBatteries = false;
+            settings.AllowHardTerminate = true;
+            settings.StartWhenAvailable = true;
+            settings.RunOnlyIfNetworkAvailable = false;
+            settings.IdleSettings.StopOnIdleEnd = false;
+            settings.IdleSettings.RestartOnIdle = false;
+            settings.AllowDemandStart = true;
+            settings.Enabled = true;
+            settings.Hidden = false;
+            settings.RunOnlyIfIdle = false;
+            settings.WakeToRun = false;
+            settings.ExecutionTimeLimit = TimeSpan.Zero;
+            settings.Priority = System.Diagnostics.ProcessPriorityClass.BelowNormal;
+        }
+
+        internal static AutostartState Inspect(TaskDefinition definition, string path, string userSid,
             string protectedExecutable, string protectedSource)
         {
-            XmlDocument document = new XmlDocument();
-            document.XmlResolver = null;
-            document.LoadXml(xml);
-            XmlNamespaceManager ns = new XmlNamespaceManager(document.NameTable);
-            ns.AddNamespace("t", "http://schemas.microsoft.com/windows/2004/02/mit/task");
-            if (Text(document, ns, "/t:Task/t:RegistrationInfo/t:Source") != Owner
-                || !MatchesUser(Text(document, ns, "/t:Task/t:Principals/t:Principal/t:UserId"), userSid)
-                || document.SelectNodes("/t:Task/t:Actions/*", ns).Count != 1
-                || Text(document, ns, "/t:Task/t:Actions/t:Exec/t:Arguments") != "--autostart")
+            ExecAction exec = definition.Actions.Count == 1 ? definition.Actions[0] as ExecAction : null;
+            if (definition.RegistrationInfo.Source != Owner
+                || !MatchesUser(definition.Principal.UserId, userSid)
+                || exec == null
+                || exec.Arguments != Arguments)
                 throw new ForeignAutostartTaskException();
-            string target = Text(document, ns, "/t:Task/t:Actions/t:Exec/t:Command");
-            bool enabled = Text(document, ns, "/t:Task/t:Settings/t:Enabled") != "false";
-            bool correctPolicy = Text(document, ns, "/t:Task/t:Principals/t:Principal/t:RunLevel") == "HighestAvailable"
-                && Text(document, ns, "/t:Task/t:Principals/t:Principal/t:LogonType") == "InteractiveToken"
-                && MatchesUser(Text(document, ns, "/t:Task/t:Triggers/t:LogonTrigger/t:UserId"), userSid)
-                && Text(document, ns, "/t:Task/t:Triggers/t:LogonTrigger/t:Enabled") != "false";
-            bool correctSettings = Text(document, ns, "/t:Task/t:Settings/t:DisallowStartIfOnBatteries") == "false"
-                && Text(document, ns, "/t:Task/t:Settings/t:StopIfGoingOnBatteries") == "false"
-                && DefaultFalse(document, ns, "RunOnlyIfIdle")
-                && DefaultFalse(document, ns, "RunOnlyIfNetworkAvailable")
-                && Text(document, ns, "/t:Task/t:Settings/t:ExecutionTimeLimit") == "PT0S"
-                && Text(document, ns, "/t:Task/t:Settings/t:MultipleInstancesPolicy") == "IgnoreNew";
-            bool isProtected = protectedExecutable != null && ProtectedCopy.SamePath(target, protectedExecutable);
+            string target = exec.Path ?? "";
+            TaskSettings settings = definition.Settings;
+            LogonTrigger logon = null;
+            foreach (Trigger trigger in definition.Triggers)
+                if (logon == null)
+                    logon = trigger as LogonTrigger;
+            bool correctPolicy = definition.Principal.RunLevel == TaskRunLevel.Highest
+                && definition.Principal.LogonType == TaskLogonType.InteractiveToken
+                && logon != null && MatchesUser(logon.UserId, userSid) && logon.Enabled;
+            bool correctSettings = !settings.DisallowStartIfOnBatteries
+                && !settings.StopIfGoingOnBatteries
+                && !settings.RunOnlyIfIdle
+                && !settings.RunOnlyIfNetworkAvailable
+                && settings.ExecutionTimeLimit == TimeSpan.Zero
+                && settings.MultipleInstances == TaskInstancesPolicy.IgnoreNew;
+            bool isProtected = protectedExecutable != null && target.Length > 0
+                && ProtectedCopy.SamePath(target, protectedExecutable);
             bool thisCopy = isProtected
                 ? protectedSource != null && ProtectedCopy.SamePath(protectedSource, path)
-                : IsCurrentCopy(target, path);
+                : target.Length > 0 && IsCurrentCopy(target, path);
             return new AutostartState
             {
                 Exists = true,
@@ -530,8 +539,8 @@ namespace BatteryChargeMeter
                 ThisCopy = thisCopy,
                 // An elevated task that runs a user-writable file is never
                 // reported as working startup, even if its policy is intact.
-                Enabled = enabled && correctPolicy && correctSettings && isProtected,
-                Registration = document.OuterXml,
+                Enabled = settings.Enabled && correctPolicy && correctSettings && isProtected,
+                Registration = definition.XmlText,
                 RepairReason = !correctPolicy || !correctSettings
                     ? "自启任务设置已变化（权限、触发条件或运行限制），请重新勾选以修复。"
                     : !isProtected
@@ -569,70 +578,25 @@ namespace BatteryChargeMeter
             catch (ArgumentException) { return false; }
         }
 
-        private static bool DefaultFalse(XmlDocument document, XmlNamespaceManager ns, string setting)
-        {
-            string value = Text(document, ns, "/t:Task/t:Settings/t:" + setting);
-            return value == "" || value == "false";
-        }
-
-        private static string Text(XmlDocument document, XmlNamespaceManager ns, string xpath)
-        {
-            XmlNode node = document.SelectSingleNode(xpath, ns);
-            return node == null ? "" : node.InnerText;
-        }
-
+        // The XML of a task in the registered shape, for harnesses that plant
+        // tasks directly (for example one left by an older version).
         internal static string BuildXml(string path, string userSid)
         {
-            XmlDocument document = new XmlDocument();
-            document.LoadXml("<Task version='1.2' xmlns='http://schemas.microsoft.com/windows/2004/02/mit/task'>"
-                + "<RegistrationInfo><Source>" + Owner + "</Source></RegistrationInfo>"
-                + "<Triggers><LogonTrigger><Enabled>true</Enabled><UserId /></LogonTrigger></Triggers>"
-                + "<Principals><Principal id='User'><UserId /><LogonType>InteractiveToken</LogonType><RunLevel>HighestAvailable</RunLevel></Principal></Principals>"
-                + "<Settings><MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>"
-                + "<DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries><StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>"
-                + "<AllowHardTerminate>true</AllowHardTerminate><StartWhenAvailable>true</StartWhenAvailable>"
-                + "<RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>"
-                + "<IdleSettings><StopOnIdleEnd>false</StopOnIdleEnd><RestartOnIdle>false</RestartOnIdle></IdleSettings>"
-                + "<AllowStartOnDemand>true</AllowStartOnDemand><Enabled>true</Enabled><Hidden>false</Hidden>"
-                + "<RunOnlyIfIdle>false</RunOnlyIfIdle><WakeToRun>false</WakeToRun><ExecutionTimeLimit>PT0S</ExecutionTimeLimit>"
-                + "<Priority>7</Priority></Settings><Actions Context='User'><Exec><Command /><Arguments>--autostart</Arguments><WorkingDirectory /></Exec></Actions></Task>");
-            XmlNamespaceManager ns = new XmlNamespaceManager(document.NameTable);
-            ns.AddNamespace("t", document.DocumentElement.NamespaceURI);
-            document.SelectSingleNode("/t:Task/t:Triggers/t:LogonTrigger/t:UserId", ns).InnerText = userSid;
-            document.SelectSingleNode("/t:Task/t:Principals/t:Principal/t:UserId", ns).InnerText = userSid;
-            document.SelectSingleNode("/t:Task/t:Actions/t:Exec/t:Command", ns).InnerText = Path.GetFullPath(path);
-            document.SelectSingleNode("/t:Task/t:Actions/t:Exec/t:WorkingDirectory", ns).InnerText = Path.GetDirectoryName(Path.GetFullPath(path));
-            return document.OuterXml;
-        }
-
-        private static bool IsMissing(Exception error)
-        {
-            while (error is TargetInvocationException && error.InnerException != null)
-                error = error.InnerException;
-            return error.HResult == unchecked((int)0x80070002);
-        }
-
-        private static object Call(object target, string method, params object[] args)
-        {
-            return target.GetType().InvokeMember(method, BindingFlags.InvokeMethod, null, target, args, CultureInfo.InvariantCulture);
-        }
-
-        private static object Get(object target, string property)
-        {
-            return target.GetType().InvokeMember(property, BindingFlags.GetProperty, null, target, null, CultureInfo.InvariantCulture);
-        }
-
-        private static void Release(object value)
-        {
-            if (value != null && Marshal.IsComObject(value))
-                Marshal.FinalReleaseComObject(value);
+            using (TaskService scheduler = new TaskService())
+            {
+                TaskDefinition definition = scheduler.NewTask();
+                Configure(definition, path, userSid);
+                return definition.XmlText;
+            }
         }
 
         public void Dispose()
         {
-            Release(folder);
+            if (folder != null)
+                folder.Dispose();
             folder = null;
-            Release(service);
+            if (service != null)
+                service.Dispose();
             service = null;
         }
     }

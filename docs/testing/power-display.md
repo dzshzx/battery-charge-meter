@@ -3,7 +3,7 @@
 Run `pwsh -NoProfile -File .\scripts\test.ps1` from a Windows-local checkout. It should not
 display UAC.
 
-The application self-test includes a regression at the actual window/tray
+The release self-test (`--self-test`) includes a regression at the actual window/tray
 consumer: a 39.08 W charging battery and 27 W platform must display approximately
 66.08 W in whole-system mode, with a `66` tray glyph. The 14.11 W CPU package is
 not added again. Battery mode displays 39.08 W / `39`; unavailable platform data

@@ -16,6 +16,28 @@ Microsoft Public License: https://github.com/svg-net/SVG. The Apache-2.0 and
 Ms-PL license texts are retained in this directory and included in the EXE's
 third-party-notice export, portable release notice and installed notice.
 
+## TaskScheduler
+
+The application embeds the unmodified .NET Framework 4.5 assembly
+`Microsoft.Win32.TaskScheduler.dll` from TaskScheduler 2.12.2, Copyright (c)
+2003-2010 David Hall, licensed under MIT. Upstream:
+https://github.com/dahall/TaskScheduler. Package:
+https://www.nuget.org/packages/TaskScheduler/2.12.2. It registers and reads the
+logon task. The license text is `LICENSE.TaskScheduler.txt`.
+
+## System.CommandLine and .NET libraries
+
+The application embeds the unmodified .NET Standard 2.0 assembly from
+System.CommandLine 2.0.12 (https://www.nuget.org/packages/System.CommandLine/2.0.12),
+its dependencies System.Memory 4.5.5, System.Buffers 4.5.1,
+System.Numerics.Vectors 4.5.0 and System.Runtime.CompilerServices.Unsafe 4.5.3,
+and the .NET Standard facade assemblies from the .NET SDK that let a
+.NET Framework 4.7 runtime load them. All are Copyright (c) .NET Foundation and
+Contributors, licensed under MIT; the license text is `LICENSE.dotnet-MIT.txt`.
+Upstream: https://github.com/dotnet/command-line-api and
+https://github.com/dotnet/runtime. NuGet restores every package in locked mode
+against the content hash in `src/packages.lock.json`.
+
 ## Inno Setup Chinese translation
 
 `installer/Languages/ChineseSimplified.isl` is an unmodified copy from
