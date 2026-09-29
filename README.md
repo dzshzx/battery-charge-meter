@@ -272,7 +272,7 @@ CI 的 `format` 作业在 Linux runner 上运行 `scripts/format.sh --check`，�
 `src/BatteryChargeMeter.manifest` 的四段版本号：
 
 ```powershell
-$planSha = 'b34cf08dc9222b7619bdb12b5d9259025891beb8'
+$planSha = '75bf5ca95a191bd97df2500521bcb7aad6136e7c'
 $planDir = Join-Path ([IO.Path]::GetTempPath()) "version-plan-$planSha"
 New-Item -ItemType Directory -Force -Path $planDir | Out-Null
 foreach ($name in 'version_plan.py', 'version_plan.py.lock') {

@@ -45,7 +45,7 @@ jobs:
               throw "Tag $tag requires manifest version $expectedManifestVersion; found $manifestVersion."
           }
 
-          $planSha = 'b34cf08dc9222b7619bdb12b5d9259025891beb8'
+          $planSha = '75bf5ca95a191bd97df2500521bcb7aad6136e7c'
           $planDir = Join-Path ([IO.Path]::GetTempPath()) "version-plan-$planSha"
           New-Item -ItemType Directory -Force -Path $planDir | Out-Null
           foreach ($name in 'version_plan.py', 'version_plan.py.lock') {
