@@ -45,7 +45,14 @@ jobs:
               throw "Tag $tag requires manifest version $expectedManifestVersion; found $manifestVersion."
           }
 
-          & uv run --script --locked scripts/version_plan.py verify `
+          $planSha = 'b34cf08dc9222b7619bdb12b5d9259025891beb8'
+          $planDir = Join-Path ([IO.Path]::GetTempPath()) "version-plan-$planSha"
+          New-Item -ItemType Directory -Force -Path $planDir | Out-Null
+          foreach ($name in 'version_plan.py', 'version_plan.py.lock') {
+              Invoke-WebRequest -UseBasicParsing -OutFile (Join-Path $planDir $name) `
+                -Uri "https://raw.githubusercontent.com/dzshzx/agent-skills/$planSha/scripts/$name"
+          }
+          & uv run --script --locked (Join-Path $planDir 'version_plan.py') verify `
             --repository dzshzx/power-meter `
             --target "v=$version" `
             --tag-ref "refs/tags/$tag"

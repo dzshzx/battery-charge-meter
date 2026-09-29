@@ -272,7 +272,14 @@ CI 的 `format` 作业在 Linux runner 上运行 `scripts/format.sh --check`，�
 `src/BatteryChargeMeter.manifest` 的四段版本号：
 
 ```powershell
-uv run --script --locked scripts/version_plan.py plan `
+$planSha = 'b34cf08dc9222b7619bdb12b5d9259025891beb8'
+$planDir = Join-Path ([IO.Path]::GetTempPath()) "version-plan-$planSha"
+New-Item -ItemType Directory -Force -Path $planDir | Out-Null
+foreach ($name in 'version_plan.py', 'version_plan.py.lock') {
+    Invoke-WebRequest -UseBasicParsing -OutFile (Join-Path $planDir $name) `
+      -Uri "https://raw.githubusercontent.com/dzshzx/agent-skills/$planSha/scripts/$name"
+}
+uv run --script --locked (Join-Path $planDir 'version_plan.py') plan `
   --repository dzshzx/power-meter `
   --target v=X.Y.Z
 ```
@@ -282,6 +289,10 @@ uv run --script --locked scripts/version_plan.py plan `
 - 默认 patch。
 - minor（有用户能感知的新能力）须先经用户确认。
 - major（含 0.x→1.0）须先经用户确认。内部重构、目录搬迁、删兼容层不算破坏性变更。
+
+版本计划脚本由 agent-skills 仓共享（`scripts/version_plan.py` 及其锁文件），
+按 40 位提交 SHA 拉取，CI 与本地用同一个 SHA；升级时同时改本段与
+`.github/workflows/release.yml` 里的 `$planSha`。
 
 基线未知和降级会直接拒绝；已发布的 tag 不能复用。候选经 `scripts/candidate.sh`
 快进进入 `master`（即该同一 SHA 的 Windows CI 已全绿）后，再创建匹配的带注解 tag。

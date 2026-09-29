@@ -1,6 +1,5 @@
-# Repository tooling environment for the Python release helpers' tests
-# (`uv run --locked python -m unittest ...`). PEP 723 scripts under scripts/
-# carry their own `*.py.lock`.
+# Repository tooling environment (kept locked; CI runs `uv lock --check`).
+# PEP 723 scripts under scripts/ carry their own `*.py.lock`.
 [project]
 name = "power-meter-dev"
 version = "0.0.0"

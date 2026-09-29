@@ -1,8 +1,7 @@
 # Power display, GUI elevation and login startup acceptance
 
-Run `pwsh -NoProfile -File .\scripts\test.ps1` from a Windows-local checkout.
-Run `uv run --locked python -m unittest discover -s scripts/tests -p "test_*.py"` for the release
-authorization checks. Neither command should display UAC.
+Run `pwsh -NoProfile -File .\scripts\test.ps1` from a Windows-local checkout. It should not
+display UAC.
 
 The application self-test includes a regression at the actual window/tray
 consumer: a 39.08 W charging battery and 27 W platform must display approximately
