@@ -260,9 +260,9 @@ CI 的 `format` 作业在 Linux runner 上运行 `scripts/format.sh --check`，�
 项目使用 GitHub Actions 构建和发布：
 
 - 改动只以候选形式进入 `master`：在已 rebase 到 `origin/master` 的干净任务分支上
-  运行 `scripts/candidate.sh`，它把当前提交推成 `candidate/**` 分支，CI 在 Windows
-  runner 上完整构建；该 SHA 的 CI 全绿后，`promote.yml` 把 `master` 快进到这个
-  SHA 并删除候选分支。`master` 规则要求每个推入的 SHA 都有通过的 `build` 检查。
+  运行全局 `land` 命令，它把当前提交推成 `candidate/**` 分支，CI 在 Windows
+  runner 上完整构建；该 SHA 的 `ci-ok` 通过后，land 把 `master` 快进到这个
+  SHA 并删除候选分支。`master` 规则要求每个推入的 SHA 都有通过的 `ci-ok` 检查。
 - 推送符合 `vX.Y.Z` 格式的 tag 时，Release 工作流会校验 tag 与 manifest
   版本一致、tag 为带注解 tag 且位于 `master`，重新构建程序，同时生成便携 EXE、
   当前用户安装包及各自的 SHA-256 校验文件，并随第三方通知和对应源码包创建
@@ -294,7 +294,7 @@ uv run --script --locked (Join-Path $planDir 'version_plan.py') plan `
 按 40 位提交 SHA 拉取，CI 与本地用同一个 SHA；升级时同时改本段与
 `.github/workflows/release.yml` 里的 `$planSha`。
 
-基线未知和降级会直接拒绝；已发布的 tag 不能复用。候选经 `scripts/candidate.sh`
+基线未知和降级会直接拒绝；已发布的 tag 不能复用。候选经 `land`
 快进进入 `master`（即该同一 SHA 的 Windows CI 已全绿）后，再创建匹配的带注解 tag。
 例如从 `v1.2.1` 升到 `v1.2.2` 时，manifest 为 `1.2.2.0`：
 

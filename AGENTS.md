@@ -27,9 +27,9 @@ commands are in `README.md`, and PawnIO obligations in `third_party/NOTICE.md`.
   report at `dist/test-report.json` marks unrun real-installer acceptance.
   Local host and UI acceptance requirements are in `docs/testing/ui-localization.md`.
 - Changes reach master only as green candidates: from a clean task branch
-  rebased on `origin/master`, `scripts/candidate.sh` pushes `candidate/**`, and
-  `promote.yml` fast-forwards master to that SHA once its CI passes; do not
-  push master directly or open PRs. A master merge does not publish: an
+  rebased on `origin/master`, the global `land` command pushes `candidate/**`
+  and fast-forwards master to that SHA once its `ci-ok` check passes; do not
+  push untested commits to master or open PRs (Dependabot PRs excepted). A master merge does not publish: an
   annotated `vX.Y.Z` release tag requires manifest `X.Y.Z.0` and passing CI at
   that exact SHA. Published tags are immutable; fixes use a new patch version.
 - Release levels follow the README release section: patch by default; a
