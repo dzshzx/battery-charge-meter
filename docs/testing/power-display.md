@@ -1,7 +1,7 @@
 # Power display, GUI elevation and login startup acceptance
 
 Run `pwsh -NoProfile -File .\scripts\test.ps1` from a Windows-local checkout.
-Run `python -m unittest discover -s scripts/tests -p "test_*.py"` for the release
+Run `uv run --locked python -m unittest discover -s scripts/tests -p "test_*.py"` for the release
 authorization checks. Neither command should display UAC.
 
 The application self-test includes a regression at the actual window/tray

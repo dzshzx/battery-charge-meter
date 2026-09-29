@@ -2,10 +2,13 @@
 # /// script
 # requires-python = ">=3.10"
 # dependencies = ["cairosvg", "pillow"]
+#
+# [tool.uv]
+# exclude-newer = "3 days"
 # ///
 """Render the Lucide battery-medium artwork with CairoSVG and Pillow.
 
-Run: uv run --script scripts/make-icon.py (dependencies are declared inline
+Run: uv run --script --locked scripts/make-icon.py (dependencies are declared inline
 and pinned in scripts/make-icon.py.lock)
 The SVG is the editable source; all Windows icon sizes are packed by Pillow.
 """

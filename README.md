@@ -238,7 +238,7 @@ EXE manifest 继续使用 `asInvoker`，由界面启动流程主动请求提权�
 便携版改名后如移动了文件，请在新程序中重新启用自启。
 安装包构建需要 Inno Setup 6.5 或更新版本；简体中文语言文件随源码提供。
 应用图标源文件为 `src/BatteryChargeMeter.svg`，使用 Lucide 的电池图形。
-运行 `uv run --script scripts/make-icon.py`（依赖在脚本头部声明，锁定于 `scripts/make-icon.py.lock`）
+运行 `uv run --script --locked scripts/make-icon.py`（依赖在脚本头部声明，锁定于 `scripts/make-icon.py.lock`）
 生成多尺寸 `src/BatteryChargeMeter.ico`；修改 SVG 后重跑并连同 ICO 一起提交。
 `dist/` 是本地构建目录，不纳入版本控制。
 
@@ -270,7 +270,7 @@ CI 的 `format` 作业在 Linux runner 上运行 `scripts/format.sh --check`，�
 `src/BatteryChargeMeter.manifest` 的四段版本号：
 
 ```powershell
-python scripts/version_plan.py plan `
+uv run --script --locked scripts/version_plan.py plan `
   --repository dzshzx/power-meter `
   --target v=X.Y.Z
 ```

@@ -1,0 +1,13 @@
+# Repository tooling environment for the Python release helpers' tests
+# (`uv run --locked python -m unittest ...`). PEP 723 scripts under scripts/
+# carry their own `*.py.lock`.
+[project]
+name = "power-meter-dev"
+version = "0.0.0"
+requires-python = ">=3.12,<3.13"
+dependencies = []
+
+[tool.uv]
+package = false
+# ADR 0048: project dependencies wait 3 days after release.
+exclude-newer = "3 days"

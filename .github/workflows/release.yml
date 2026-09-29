@@ -22,10 +22,10 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set up Python
-        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+      - name: Set up uv (Python from .python-version)
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7
         with:
-          python-version: "3.12"
+          version: "0.12.19"
 
       - name: Validate immutable release identity
         id: version
@@ -45,7 +45,7 @@ jobs:
               throw "Tag $tag requires manifest version $expectedManifestVersion; found $manifestVersion."
           }
 
-          & python scripts/version_plan.py verify `
+          & uv run --script --locked scripts/version_plan.py verify `
             --repository dzshzx/power-meter `
             --target "v=$version" `
             --tag-ref "refs/tags/$tag"
