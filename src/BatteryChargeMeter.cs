@@ -9,8 +9,8 @@ using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
 [assembly: System.Runtime.Versioning.TargetFramework(
-    ".NETFramework,Version=v4.7",
-    FrameworkDisplayName = ".NET Framework 4.7")]
+    ".NETFramework,Version=v4.7.1",
+    FrameworkDisplayName = ".NET Framework 4.7.1")]
 [assembly: System.Reflection.AssemblyTitle("Power Meter")]
 [assembly: System.Reflection.AssemblyProduct("Power Meter")]
 [assembly: System.Runtime.CompilerServices.InternalsVisibleTo("PowerMeter.Tests")]

@@ -1,6 +1,6 @@
 # Power Meter agent notes
 
-Windows WinForms monitor targeting .NET Framework 4.7. Power terminology and
+Windows WinForms monitor targeting .NET Framework 4.7.1. Power terminology and
 measurement boundaries are defined in `CONTEXT.md`; packaging and release
 commands are in `README.md`, and PawnIO obligations in `third_party/NOTICE.md`.
 

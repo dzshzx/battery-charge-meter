@@ -206,7 +206,7 @@ EXE manifest 继续使用 `asInvoker`，由界面启动流程主动请求提权�
 ## 系统要求
 
 - Windows 10 或 Windows 11
-- .NET Framework 4.7 或更高版本
+- .NET Framework 4.7.1 或更高版本（Windows 10 1709 起自带）
 - 笔记本固件需要通过 ACPI/WMI 暴露电池充放电速率
 
 部分机型只报告充电状态，不报告实时功率；这种情况下界面会显示 `N/A`。
@@ -232,7 +232,7 @@ Pester 5（需装在 Windows PowerShell 与 PowerShell 7 都能加载的
 启动的宿主验收见 `docs/testing/host-acceptance.md`。
 
 构建需要 .NET SDK（8 或更新版本）：脚本以 `dotnet build`（锁定模式还原）构建
-`src/PowerMeter.csproj`（SDK 风格项目，目标 .NET Framework 4.7，引用程序集来自 NuGet），
+`src/PowerMeter.csproj`（SDK 风格项目，目标 .NET Framework 4.7.1，引用程序集来自 NuGet），
 将应用 EXE 写入 `dist/`。依赖由 NuGet 按 `packages.lock.json` 锁定还原并校验内容哈希；
 升级依赖时改 csproj 后运行 `dotnet restore --force-evaluate` 刷新锁文件。
 AntdUI 2.4.11、TaskScheduler 2.12.2（登录自启任务）、System.CommandLine 2.0.12（命令行解析）

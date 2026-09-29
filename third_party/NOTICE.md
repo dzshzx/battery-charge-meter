@@ -29,10 +29,9 @@ logon task. The license text is `LICENSE.TaskScheduler.txt`.
 
 The application embeds the unmodified .NET Standard 2.0 assembly from
 System.CommandLine 2.0.12 (https://www.nuget.org/packages/System.CommandLine/2.0.12),
-its dependencies System.Memory 4.5.5, System.Buffers 4.5.1,
-System.Numerics.Vectors 4.5.0 and System.Runtime.CompilerServices.Unsafe 4.5.3,
-and the .NET Standard facade assemblies from the .NET SDK that let a
-.NET Framework 4.7 runtime load them. All are Copyright (c) .NET Foundation and
+and its dependencies System.Memory 4.5.5, System.Buffers 4.5.1,
+System.Numerics.Vectors 4.5.0 and System.Runtime.CompilerServices.Unsafe 4.5.3.
+The .NET Framework 4.7.1+ runtime supplies .NET Standard support itself. All are Copyright (c) .NET Foundation and
 Contributors, licensed under MIT; the license text is `LICENSE.dotnet-MIT.txt`.
 Upstream: https://github.com/dotnet/command-line-api and
 https://github.com/dotnet/runtime. NuGet restores every package in locked mode

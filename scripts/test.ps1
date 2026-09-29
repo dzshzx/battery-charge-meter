@@ -138,8 +138,8 @@ try {
 finally {
     $env:BATTERY_CHARGE_METER_TEST_ASSEMBLY = $previousAssemblyPath
 }
-if ($targetFrameworkName -ne '.NETFramework,Version=v4.7') {
-    throw "Expected .NET Framework 4.7 assembly metadata; found: $targetFrameworkName"
+if ($targetFrameworkName -ne '.NETFramework,Version=v4.7.1') {
+    throw "Expected .NET Framework 4.7.1 assembly metadata; found: $targetFrameworkName"
 }
 
 Complete-Phase 'unit-tests'
@@ -595,7 +595,7 @@ finally {
         powershell = $PSVersionTable.PSVersion.ToString()
         dotnet_framework_version = $frameworkVersion
         dotnet_framework_release = $frameworkRelease
-        target_framework = '.NETFramework,Version=v4.7'
+        target_framework = '.NETFramework,Version=v4.7.1'
         inno_setup = [ordered]@{ path = $realInstallerCompilerPath; version = $installerCompilerVersion }
         scope = if ($RequireInstaller) { 'strict-real-installer' } else { 'local-optional-installer' }
         result = if ($failure) { 'failed' } elseif ($installerSkipReason) { 'partial-installer-not-run' } else { 'passed' }

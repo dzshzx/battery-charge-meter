@@ -26,17 +26,16 @@
     <EmbeddedResource Include="..\third_party\LICENSE.TaskScheduler.txt" LogicalName="TaskScheduler-license.txt" />
     <EmbeddedResource Include="..\third_party\LICENSE.dotnet-MIT.txt" LogicalName="dotnet-MIT.txt" />
   </ItemGroup>
-  <!-- Keep the portable EXE self-contained: every copy-local assembly
-       (package libraries and the .NET Standard facades that let a 4.7
-       runtime load them; satellite resource assemblies excluded) is
-       embedded as lib/<name>.dll for EmbeddedLibraries to load, and nothing
-       is written beside the EXE. Resolution falls back to these copies only
-       when the runtime lacks an assembly. The lock file pins each package's
+  <!-- Keep the portable EXE self-contained: every package assembly (NuGet
+       copy-local items; satellite resource assemblies excluded) is embedded
+       as lib/<name>.dll for EmbeddedLibraries to load, and nothing is written
+       beside the EXE. The .NET Standard facades the SDK adds are not shipped:
+       the 4.7.1+ runtime provides them. The lock file pins each package's
        content hash. -->
   <Target Name="EmbedCopyLocalAssemblies" AfterTargets="ResolveAssemblyReferences">
     <ItemGroup>
       <_EmbeddedAssembly Include="@(ReferenceCopyLocalPaths)"
-        Condition="'%(Extension)' == '.dll' And '%(ReferenceCopyLocalPaths.DestinationSubDirectory)' == ''" />
+        Condition="'%(Extension)' == '.dll' And '%(ReferenceCopyLocalPaths.DestinationSubDirectory)' == '' And '%(ReferenceCopyLocalPaths.NuGetPackageId)' != ''" />
       <EmbeddedResource Include="@(_EmbeddedAssembly)" LogicalName="lib/%(Filename)%(Extension)" />
       <ReferenceCopyLocalPaths Remove="@(ReferenceCopyLocalPaths)" />
     </ItemGroup>

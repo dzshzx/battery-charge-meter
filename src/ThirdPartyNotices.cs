@@ -31,7 +31,7 @@ namespace BatteryChargeMeter
                     + ReadResource("TaskScheduler-license.txt")
                     + Environment.NewLine + Environment.NewLine
                     + "System.CommandLine, System.Memory, System.Buffers, System.Numerics.Vectors,"
-                    + " System.Runtime.CompilerServices.Unsafe and .NET Standard facades - MIT License" + Environment.NewLine
+                    + " System.Runtime.CompilerServices.Unsafe - MIT License" + Environment.NewLine
                     + ReadResource("dotnet-MIT.txt"),
                 Encoding.UTF8);
         }

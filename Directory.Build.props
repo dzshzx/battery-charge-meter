@@ -3,7 +3,7 @@
        against pinned .NET Framework reference assemblies from NuGet, so the
        build needs only the .NET SDK, not a targeting pack or Visual Studio. -->
   <PropertyGroup>
-    <TargetFramework>net47</TargetFramework>
+    <TargetFramework>net471</TargetFramework>
     <OutputType>WinExe</OutputType>
     <Optimize>true</Optimize>
     <!-- Match csc's AnyCPU default. Without this the SDK makes .NET Framework
