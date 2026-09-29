@@ -28,6 +28,7 @@ $uninstaller = Join-Path $installDir 'unins000.exe'
 $receipt = Join-Path $root 'cleanup-called.txt'
 $syncReceipt = Join-Path $root 'sync-called.txt'
 $failureFlag = Join-Path $root 'force-cleanup-failure'
+$fixtureErrors = Join-Path $root 'fixture-errors.txt'
 $taskName = "BatteryChargeMeter.InstallerTest.$id"
 $appId = "PowerMeterTest.$id"
 $shortcutName = "Battery Charge Meter Installer Test $id"
@@ -219,12 +220,12 @@ class InstallerCleanupFixture {
                 .Invoke(new object[] {Process.GetCurrentProcess().MainModule.FileName, user.User.Value, "__TASK__", @"__ROOT__"});
             if (remove) return Convert.ToInt32(type.GetMethod("Disable", flags).Invoke(manager, null));
             return Convert.ToInt32(type.GetMethod("Synchronize", flags).Invoke(manager, new object[] {elevated}));
-        } catch { return 1; }
+        } catch (Exception ex) { File.AppendAllText(@"__ERRORS__", ex + "\r\n"); return 1; }
         finally { if (manager != null) ((IDisposable)manager).Dispose(); }
     }
 }
 '@
-    $code = $code.Replace('__RECEIPT__', $receipt.Replace('"', '""')).Replace('__SYNC__', $syncReceipt.Replace('"', '""')).Replace('__FAILURE__', $failureFlag.Replace('"', '""')).Replace('__PAYLOAD__', $ExecutablePath.Replace('"', '""')).Replace('__TASK__', $taskName).Replace('__ROOT__', $protectedRoot.Replace('"', '""'))
+    $code = $code.Replace('__RECEIPT__', $receipt.Replace('"', '""')).Replace('__SYNC__', $syncReceipt.Replace('"', '""')).Replace('__FAILURE__', $failureFlag.Replace('"', '""')).Replace('__ERRORS__', $fixtureErrors.Replace('"', '""')).Replace('__PAYLOAD__', $ExecutablePath.Replace('"', '""')).Replace('__TASK__', $taskName).Replace('__ROOT__', $protectedRoot.Replace('"', '""'))
     $fixtureExe = Join-Path $root 'fixture.exe'
     $upgradeExe = Join-Path $root 'fixture-upgrade.exe'
     foreach ($build in @(@{ Name = '1'; Output = $fixtureExe }, @{ Name = '2'; Output = $upgradeExe })) {
@@ -377,5 +378,6 @@ finally {
     if (Test-Path -LiteralPath $protectedParent) { Remove-Item -LiteralPath $protectedParent -Recurse -Force }
     if (Test-Path -LiteralPath $shortcut) { Remove-Item -LiteralPath $shortcut -Force }
     if (Test-Path -LiteralPath $registryPath) { Remove-Item -LiteralPath $registryPath -Recurse -Force }
+    if (Test-Path -LiteralPath $fixtureErrors) { Write-Warning ("Cleanup fixture exceptions:`n" + (Get-Content -LiteralPath $fixtureErrors -Raw)) }
     if (Test-Path -LiteralPath $root) { Remove-Item -LiteralPath $root -Recurse -Force }
 }
