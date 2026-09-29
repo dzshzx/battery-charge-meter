@@ -38,6 +38,10 @@ jobs:
         shell: pwsh
         run: ./scripts/test.ps1 -RequireInstaller
 
+      - name: Check NuGet dependency licenses (SPDX allowlist)
+        shell: pwsh
+        run: ./scripts/check-licenses.ps1
+
       - name: Save verification report
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -63,7 +67,7 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: "24"
+          node-version-file: .node-version
 
       - name: Check formatting (ruff, prettier, shfmt)
         run: bash scripts/format.sh --check
