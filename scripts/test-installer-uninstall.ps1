@@ -207,6 +207,10 @@ class InstallerCleanupFixture {
         object manager = null;
         try {
             Assembly app = Assembly.LoadFile(@"__PAYLOAD__");
+            // Main registers the embedded-library resolver before touching
+            // TaskScheduler types; a reflection host must do the same.
+            app.GetType("BatteryChargeMeter.EmbeddedLibraries", true)
+                .GetMethod("Initialize", BindingFlags.Static | BindingFlags.NonPublic).Invoke(null, null);
             Type type = app.GetType("BatteryChargeMeter.AutostartManager", true);
             BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
             WindowsIdentity user = WindowsIdentity.GetCurrent();
