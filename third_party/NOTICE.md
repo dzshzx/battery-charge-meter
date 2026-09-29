@@ -7,8 +7,8 @@ AntdUI 2.4.11, Copyright (c) Tom 2024-2030, licensed under Apache-2.0.
 Upstream: https://github.com/AntdUI/AntdUI. Package:
 https://www.nuget.org/packages/AntdUI/2.4.11. The NuGet package SHA-256 is
 `21b856ffa3ec518a0576492fac9c529b7436fead02e6b057af9aa9c0c917b908`.
-`scripts/restore-ui.ps1` verifies the archive before every build; binaries are
-cached locally, not committed. The GUI uses its buttons, panel, checkbox,
+NuGet restores it in locked mode against the content hash in
+`src/packages.lock.json`; binaries are not committed. The GUI uses its buttons, panel, checkbox,
 language selector and popover. No separate UI runtime installation is needed.
 
 AntdUI includes SVG.NET rendering code, Copyright (c) svg-net, under the

@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>PowerMeter</AssemblyName>
+    <RootNamespace>BatteryChargeMeter</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="System.Windows.Forms" />
+    <Reference Include="System.Drawing" />
+    <Reference Include="System.Management" />
+    <Reference Include="System.Design" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Compile against AntdUI but do not copy it: EmbeddedUi loads the
+         embedded copy, keeping the portable EXE self-contained. The lock file
+         pins the package content hash. -->
+    <PackageReference Include="AntdUI" Version="2.4.11" GeneratePathProperty="true" ExcludeAssets="runtime" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- A same-named IntelMSR.bin beside the EXE takes precedence at runtime;
+         see third_party/NOTICE.md. -->
+    <EmbeddedResource Include="..\third_party\IntelMSR.bin" LogicalName="IntelMSR.bin" />
+    <EmbeddedResource Include="..\third_party\NOTICE.md" LogicalName="THIRD_PARTY_NOTICE.md" />
+    <EmbeddedResource Include="..\third_party\LICENSE.LGPL-2.1.txt" LogicalName="LGPL-2.1.txt" />
+    <EmbeddedResource Include="..\third_party\LICENSE.Apache-2.0.txt" LogicalName="Apache-2.0.txt" />
+    <EmbeddedResource Include="..\third_party\LICENSE.Lucide.txt" LogicalName="Lucide-license.txt" />
+    <EmbeddedResource Include="..\third_party\LICENSE.Ms-PL.txt" LogicalName="Ms-PL.txt" />
+    <EmbeddedResource Include="$(PkgAntdUI)\lib\net46\AntdUI.dll" LogicalName="AntdUI.dll" />
+  </ItemGroup>
+</Project>

@@ -4,26 +4,19 @@ param()
 $ErrorActionPreference = 'Stop'
 
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
-$sourceDir = Join-Path $repoRoot 'src'
 $distDir = Join-Path $repoRoot 'dist'
-$sourcePaths = @(
-    Get-ChildItem -LiteralPath $sourceDir -Filter '*.cs' -File |
-        Sort-Object -Property Name |
-        Select-Object -ExpandProperty FullName
-)
-$manifestPath = Join-Path $sourceDir 'BatteryChargeMeter.manifest'
-$iconPath = Join-Path $sourceDir 'BatteryChargeMeter.ico'
 $outputPath = Join-Path $distDir 'PowerMeter.exe'
-# Embedded so the portable application remains self-contained. A same-named
-# file beside the EXE takes precedence at runtime; see third_party/NOTICE.md.
+# Resources embedded by src/PowerMeter.csproj; checked here for a clear error.
 $modulePath = Join-Path $repoRoot 'third_party/IntelMSR.bin'
-$noticePath = Join-Path $repoRoot 'third_party/NOTICE.md'
-$licensePath = Join-Path $repoRoot 'third_party/LICENSE.LGPL-2.1.txt'
 $expectedModuleHash = 'd6ed85d65ab17a22f813ef98207d6d537155ee2ded5976a21cb48413c9b92e5f'
-$uiLibrary = & (Join-Path $PSScriptRoot 'restore-ui.ps1')
-$uiLicensePath = Join-Path $repoRoot 'third_party\LICENSE.Apache-2.0.txt'
+$inputs = @(
+    $modulePath,
+    (Join-Path $repoRoot 'third_party/NOTICE.md'),
+    (Join-Path $repoRoot 'third_party/LICENSE.LGPL-2.1.txt'),
+    (Join-Path $repoRoot 'src/BatteryChargeMeter.ico')
+)
 
-foreach ($resourcePath in @($modulePath, $noticePath, $licensePath, $iconPath)) {
+foreach ($resourcePath in $inputs) {
     if (-not (Test-Path -LiteralPath $resourcePath)) {
         throw "Missing build input: $resourcePath"
     }
@@ -33,16 +26,8 @@ if ((Get-FileHash -Algorithm SHA256 -LiteralPath $modulePath).Hash.ToLowerInvari
     throw 'The vendored IntelMSR.bin does not match the pinned PawnIO.Modules 0.2.10 module.'
 }
 
-$compilerCandidates = @(
-    (Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'),
-    (Join-Path $env:WINDIR 'Microsoft.NET\Framework\v4.0.30319\csc.exe')
-)
-$compilerPath = $compilerCandidates |
-    Where-Object { Test-Path -LiteralPath $_ } |
-    Select-Object -First 1
-
-if (-not $compilerPath) {
-    throw 'The .NET Framework C# compiler was not found.'
+if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) {
+    throw 'The .NET SDK (dotnet) was not found.'
 }
 
 if (Test-Path -LiteralPath $distDir) {
@@ -50,39 +35,18 @@ if (Test-Path -LiteralPath $distDir) {
 }
 New-Item -ItemType Directory -Path $distDir -Force | Out-Null
 
-$compilerArguments = @(
-    '/nologo',
-    '/target:winexe',
-    '/optimize+',
-    "/win32manifest:$manifestPath",
-    "/win32icon:$iconPath",
-    "/resource:$modulePath,IntelMSR.bin",
-    "/resource:$noticePath,THIRD_PARTY_NOTICE.md",
-    "/resource:$licensePath,LGPL-2.1.txt",
-    "/resource:$uiLicensePath,Apache-2.0.txt",
-    "/resource:$repoRoot\third_party\LICENSE.Lucide.txt,Lucide-license.txt",
-    "/resource:$repoRoot\third_party\LICENSE.Ms-PL.txt,Ms-PL.txt",
-    "/resource:$uiLibrary,AntdUI.dll",
-    "/out:$outputPath",
-    '/reference:System.Windows.Forms.dll',
-    '/reference:System.Drawing.dll',
-    '/reference:System.Management.dll',
-    '/reference:System.Design.dll',
-    "/reference:$uiLibrary",
-    $sourcePaths
-)
-
-& $compilerPath @compilerArguments
-if ($LASTEXITCODE -ne 0) {
-    throw "Compilation failed with exit code $LASTEXITCODE."
+# --locked-mode fails the restore if packages.lock.json is stale; NuGet checks
+# each package against the content hash recorded there.
+function Invoke-ProjectBuild([string]$project, [string]$output) {
+    & dotnet build (Join-Path $repoRoot $project) --configuration Release --locked-mode --nologo --output $output
+    if ($LASTEXITCODE -ne 0) {
+        throw "Build of $project failed with exit code $LASTEXITCODE."
+    }
 }
 
+Invoke-ProjectBuild 'src/PowerMeter.csproj' $distDir
 $artifact = Get-Item -LiteralPath $outputPath
-$compatDir = Join-Path $distDir 'compat'
-New-Item -ItemType Directory -Path $compatDir | Out-Null
-& $compilerPath /nologo /target:winexe /optimize+ "/win32manifest:$manifestPath" "/win32icon:$iconPath" `
-    "/out:$compatDir\BatteryChargeMeter.exe" (Join-Path $repoRoot 'installer\LegacyLauncher.cs')
-if ($LASTEXITCODE -ne 0) { throw 'Legacy launcher compilation failed.' }
+Invoke-ProjectBuild 'installer/LegacyLauncher.csproj' (Join-Path $distDir 'compat')
 $hash = Get-FileHash -Algorithm SHA256 -LiteralPath $outputPath
 
 Write-Host "Built: $($artifact.FullName)"

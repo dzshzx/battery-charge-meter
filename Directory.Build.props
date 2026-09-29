@@ -1,0 +1,24 @@
+<Project>
+  <!-- Shared by the application and the legacy launcher. The SDK compiles
+       against pinned .NET Framework reference assemblies from NuGet, so the
+       build needs only the .NET SDK, not a targeting pack or Visual Studio. -->
+  <PropertyGroup>
+    <TargetFramework>net47</TargetFramework>
+    <OutputType>WinExe</OutputType>
+    <Optimize>true</Optimize>
+    <DebugType>none</DebugType>
+    <Deterministic>true</Deterministic>
+    <!-- Assembly attributes are declared in source. -->
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute>
+    <ApplicationManifest>$(MSBuildThisFileDirectory)src\BatteryChargeMeter.manifest</ApplicationManifest>
+    <ApplicationIcon>$(MSBuildThisFileDirectory)src\BatteryChargeMeter.ico</ApplicationIcon>
+    <GenerateSupportedRuntime>false</GenerateSupportedRuntime>
+    <AutoGenerateBindingRedirects>false</AutoGenerateBindingRedirects>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <EnableDefaultEmbeddedResourceItems>false</EnableDefaultEmbeddedResourceItems>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
+</Project>
