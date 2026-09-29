@@ -227,7 +227,7 @@ EXE manifest 继续使用 `asInvoker`，由界面启动流程主动请求提权�
 各项结果与耗时，并作为工作流 artifact 保存。真实电池状态、已安装驱动和管理员
 启动的宿主验收见 `docs/testing/host-acceptance.md`。
 
-构建需要 .NET SDK（8 或更新版本）：脚本以 `dotnet build --locked-mode` 构建
+构建需要 .NET SDK（8 或更新版本）：脚本以 `dotnet build`（锁定模式还原）构建
 `src/PowerMeter.csproj`（SDK 风格项目，目标 .NET Framework 4.7，引用程序集来自 NuGet），
 将应用 EXE 写入 `dist/`。依赖由 NuGet 按 `packages.lock.json` 锁定还原并校验内容哈希；
 升级依赖时改 csproj 后运行 `dotnet restore --force-evaluate` 刷新锁文件。

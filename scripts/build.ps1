@@ -35,10 +35,10 @@ if (Test-Path -LiteralPath $distDir) {
 }
 New-Item -ItemType Directory -Path $distDir -Force | Out-Null
 
-# --locked-mode fails the restore if packages.lock.json is stale; NuGet checks
+# RestoreLockedMode fails the restore if packages.lock.json is stale; NuGet checks
 # each package against the content hash recorded there.
 function Invoke-ProjectBuild([string]$project, [string]$output) {
-    & dotnet build (Join-Path $repoRoot $project) --configuration Release --locked-mode --nologo --output $output
+    & dotnet build (Join-Path $repoRoot $project) --configuration Release -p:RestoreLockedMode=true --nologo --output $output
     if ($LASTEXITCODE -ne 0) {
         throw "Build of $project failed with exit code $LASTEXITCODE."
     }

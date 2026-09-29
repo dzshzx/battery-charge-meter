@@ -6,6 +6,10 @@
     <TargetFramework>net47</TargetFramework>
     <OutputType>WinExe</OutputType>
     <Optimize>true</Optimize>
+    <!-- Match csc's AnyCPU default. Without this the SDK makes .NET Framework
+         EXEs x86 on Windows and adds a win7-x86 runtime identifier. -->
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <Prefer32Bit>false</Prefer32Bit>
     <DebugType>none</DebugType>
     <Deterministic>true</Deterministic>
     <!-- Assembly attributes are declared in source. -->
