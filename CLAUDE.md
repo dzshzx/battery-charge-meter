@@ -27,12 +27,12 @@ commands are in `README.md`, and PawnIO obligations in `third_party/NOTICE.md`.
   CI and Release pass `-RequireInstaller`, so missing ISCC fails. The JSON
   report at `dist/test-report.json` marks unrun real-installer acceptance.
   Local host and UI acceptance requirements are in `docs/testing/ui-localization.md`.
-- Changes reach master only as green candidates: from a clean task branch
-  rebased on `origin/master`, the global `land` command pushes `candidate/**`
-  and fast-forwards master to that SHA once its `ci-ok` check passes; do not
-  push untested commits to master or open PRs (Dependabot PRs excepted). A master merge does not publish: an
-  annotated `vX.Y.Z` release tag requires manifest `X.Y.Z.0` and passing CI at
-  that exact SHA. Published tags are immutable; fixes use a new patch version.
+- Daily changes complete the relevant local checks before `land --no-recut`
+  synchronizes master. Dependabot PRs are validated locally before merging.
+  Windows build/install acceptance remains available through manual CI and
+  the Release workflow. An authorized annotated `vX.Y.Z` tag must match manifest
+  `X.Y.Z.0`; master synchronization itself does not publish. Published tags
+  are immutable; fixes use a new patch version.
 - Release levels follow the README release section: patch by default; a
   minor (user-visible new capability) or a major (including 0.x to 1.0)
   needs the user's confirmation first.
