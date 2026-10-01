@@ -28,7 +28,7 @@ commands are in `README.md`, and PawnIO obligations in `third_party/NOTICE.md`.
   report at `dist/test-report.json` marks unrun real-installer acceptance.
   Local host and UI acceptance requirements are in `docs/testing/ui-localization.md`.
 - Daily changes complete the relevant local checks before `land --no-recut`
-  synchronizes master. Dependabot PRs are validated locally before merging.
+  synchronizes master. Renovate PRs require local native validation before manual merging.
   Windows build/install acceptance remains available through manual CI and
   the Release workflow. An authorized annotated `vX.Y.Z` tag must match manifest
   `X.Y.Z.0`; master synchronization itself does not publish. Published tags

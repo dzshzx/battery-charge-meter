@@ -265,7 +265,7 @@ C# 与 PowerShell 不在范围内。`third_party/`（上游许可证与哈希钉
 
 - 日常改动完成相应本地验证后，用 `land --no-recut` 快进同步 `master`。
   GitHub 保留手动 Windows validation 和正式 Release 的 Windows 构建、真实安装/卸载验收。
-  Dependabot PR 在本地验证后合入，自动合入关闭。
+  Renovate PR 经 Windows 原生验收后人工合入。
 - 推送符合 `vX.Y.Z` 格式的 tag 时，Release 工作流会校验 tag 与 manifest
   版本一致、tag 为带注解 tag 且位于 `master`，重新构建程序，同时生成便携 EXE、
   当前用户安装包及各自的 SHA-256 校验文件，并随第三方通知和对应源码包创建
