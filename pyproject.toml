@@ -3,7 +3,8 @@
 [project]
 name = "power-meter-dev"
 version = "0.0.0"
-requires-python = ">=3.12,<3.13"
+# Repository tooling selects 3.14 through .python-version; the Windows application is independent.
+requires-python = ">=3.12"
 dependencies = []
 
 [tool.uv]
