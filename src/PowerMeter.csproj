@@ -10,7 +10,7 @@
     <Reference Include="System.Design" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="AntdUI" Version="2.4.11" />
+    <PackageReference Include="AntdUI" Version="2.4.12" />
     <PackageReference Include="TaskScheduler" Version="2.12.2" />
     <PackageReference Include="System.CommandLine" Version="2.0.12" />
   </ItemGroup>
